@@ -25,13 +25,10 @@ web_compressed/
 # ============================================
 # Third-party libraries (installed by circup)
 # These typically start with adafruit_ or have .mpy extension
-circuitpython/lib/adafruit_*
-circuitpython/lib/*.mpy
-circuitpython/lib/**/*.mpy
+circuitpython/lib/
+!circuitpython/lib/README.md
 
-# But allow custom local libraries
-!circuitpython/lib/local_*
-!circuitpython/lib/*/local_*
+# Your code goes in local/ (not ignored)
 
 # User configuration (use .example instead)
 settings.toml
