@@ -1,285 +1,308 @@
 """
-wifi_server.py - WiFi Access Point and HTTP Server with Debug Logging
+web_server_gz.py - CircuitPython web server with gzip compression support
+
+This module extends the basic web server to serve pre-compressed .gz files
+with proper Content-Encoding headers for maximum flash savings.
+
+Usage in code.py:
+    from web_server_gz import WebServerGzip
+    
+    server = WebServerGzip(pool, debug=True)
+    server.start(port=80)
+    
+    while True:
+        server.poll()
+        time.sleep(0.01)
 """
 
-import wifi
-import socketpool
 import time
-import json
 import os
-from adafruit_httpserver import Server, Request, Response
 
-class WiFiAPTask:
-    """WiFi Access Point manager"""
-    def __init__(self, ssid="OpenPonyLogger", password=None):
-        self.ssid = ssid
-        self.password = password
-        self.ap_active = False
-        self.ip_address = None
-        
-    def start(self):
-        """Start WiFi Access Point"""
-        print("\n[WiFi] Starting Access Point...")
-        print(f"  SSID: {self.ssid}")
-        
-        try:
-            # Start AP mode
-            if self.password:
-                print(f"  Password: {'*' * len(self.password)}")
-                wifi.radio.start_ap(self.ssid, self.password)
-            else:
-                print("  No password (open network)")
-                wifi.radio.start_ap(self.ssid)
-            
-            self.ap_active = True
-            self.ip_address = str(wifi.radio.ipv4_address_ap)
-            
-            print("  ✓ AP started")
-            print("  IP Address: {self.ip_address}")
-            print("  Gateway: {wifi.radio.ipv4_gateway_ap}")
-            print("  Subnet: {wifi.radio.ipv4_subnet_ap}")
-            print("  Channel: {wifi.radio.ap_info.channel if hasattr(wifi.radio, 'ap_info') else 'N/A'}")
-            print("  Connect to: http://{self.ip_address}")
-            
-            return True
-            
-        except Exception as e:
-            print("  ✗ Failed to start AP: {e}")
-            import traceback
-            traceback.print_exception(e)
-            return False
+class WebServerGzip:
+    """Web server that serves pre-compressed gzip files"""
     
-    def stop(self):
-        """Stop WiFi Access Point"""
-        if self.ap_active:
-            wifi.radio.stop_ap()
-            self.ap_active = False
-            print("[WiFi] Access Point stopped")
-
-
-class WebServerTask:
-    """HTTP server for web interface and API"""
-    def __init__(self, data_buffer, wifi_ap):
-        self.data_buffer = data_buffer
-        self.wifi_ap = wifi_ap
-        self.server = None
-        self.pool = None
-        self.request_count = 0
-        self.last_request_time = 0
+    def __init__(self, socket_pool, web_root="/web", debug=False):
+        """
+        Initialize web server with gzip support
         
-    def check_web_files(self):
-        """Check if web files exist and are readable"""
-        print("\n[WebServer] Checking web files...")
-        web_dir = "/web"
-    
+        Args:
+            socket_pool: socketpool from wifi
+            web_root: Directory containing web files (default: /web)
+            debug: Enable debug logging
+        """
+        self.pool = socket_pool
+        self.web_root = web_root
+        self.debug = debug
+        self.server_socket = None
+        
+        # Load asset map if available
         try:
-            # Check if directory exists
-            sd_contents = os.listdir("/sd")
-            print(f"  Contents of /sd: {sd_contents}")
-        
-            if "web" not in sd_contents:
-                print(f"  ✗ Directory 'web' not found in /sd")
-                return False
-        
-            print(f"  ✓ Directory 'web' found")
-        
-            # List files in web directory
-            try:
-                files = os.listdir(web_dir)
-                print(f"  Files in {web_dir}: {files}")
-            except Exception as e:
-                print(f"  ✗ Cannot list {web_dir}: {e}")
-                return False
-        
-            # Check for index.html
-            if "index.html" in files:
-                print("  ✓ index.html found")
-                # Try to read it
-                try:
-                    with open(f"{web_dir}/index.html", "r") as f:
-                        content = f.read(100)  # Read first 100 chars
-                        print(f"  ✓ index.html readable ({len(content)} chars preview)")
-                except Exception as e:
-                    print(f"  ✗ Cannot read index.html: {e}")
-                    return False
-            else:
-                print("  ⚠ index.html not found in web directory")
-                print(f"  Available files: {files}")
-            
-            # Check other important files
-            for filename in ['styles.css', 'app.js', 'gauge.min.js']:
-                if filename in files:
-                    print(f"  ✓ {filename} found")
-                else:
-                    print(f"  ⚠ {filename} not found")
-        
-            return True
-        
-        except Exception as e:
-            print(f"  ✗ Error checking files: {e}")
-            import traceback
-            traceback.print_exception(e)
-            return False
-
-    def start(self):
-        """Initialize HTTP server"""
-        if not self.wifi_ap.ap_active:
-            print("[WebServer] Error: WiFi AP not active")
-            return False
-        
-        print("\n[WebServer] Starting HTTP server...")
-        
-        # Check web files first
-        if not self.check_web_files():
-            print("  ⚠ Warning: Web files may not be accessible")
-        
-        try:
-            # Create socket pool
-            self.pool = socketpool.SocketPool(wifi.radio)
-            print("  ✓ Socket pool created")
-            
-            # Create server with root directory for static files
-            self.server = Server(self.pool, "/web", debug=True)
-            print("  ✓ Server object created")
-            
-            # Register route handlers using decorators
-            @self.server.route("/api/live")
-            def live_data(request: Request):
-                print(f"[API] /api/live requested from {request.client_address}")
-                return self.serve_live_data(request)
-            
-            @self.server.route("/api/status")
-            def status(request: Request):
-                print(f"[API] /api/status requested from {request.client_address}")
-                return self.serve_status(request)
-            
-            @self.server.route("/")
-            def index(request: Request):
-                print(f"[HTTP] / requested from {request.client_address}")
-                return self.serve_index(request)
-            
-            print("  ✓ Routes registered")
-            
-            # Start server
-            ip = str(wifi.radio.ipv4_address_ap)
-            self.server.start(ip, port=80)
-            
-            print(f"  ✓ Server started on http://{ip}:80")
-            print(f"  Serving files from: /web/")
-            print(f"  Registered routes:")
-            print(f"    - http://{ip}/")
-            print(f"    - http://{ip}/api/live")
-            print(f"    - http://{ip}/api/status")
-            
-            return True
-            
-        except Exception as e:
-            print(f"  ✗ Failed to start server: {e}")
-            import traceback
-            traceback.print_exception(e)
-            return False
-    
-    def serve_index(self, request: Request):
-        """Serve main index.html"""
-        try:
-            print("[HTTP] Serving index.html...")
-            with open("/web/index.html", "r") as f:
-                html = f.read()
-            print(f"[HTTP] Loaded {len(html)} bytes")
-            return Response(request, html, content_type="text/html")
-        except Exception as e:
-            print(f"[HTTP] Error loading index.html: {e}")
-            error_html = f"""
-            <html>
-            <body>
-            <h1>Error</h1>
-            <p>Could not load index.html: {e}</p>
-            <p>Files available: {os.listdir('/web')}</p>
-            </body>
-            </html>
-            """
-            return Response(request, error_html, content_type="text/html", status=500)
-    
-    def serve_live_data(self, request: Request):
-        """Serve live telemetry data as JSON"""
-        accel = self.data_buffer.get('accel', {})
-        gps = self.data_buffer.get('gps', {})
-        
-        # Build JSON response
-        data = {
-            "timestamp": int(time.monotonic() * 1000),
-            "accel": {
-                "x": round(accel.get('x', 0), 3),
-                "y": round(accel.get('y', 0), 3),
-                "z": round(accel.get('z', 0), 3),
-                "gx": round(accel.get('gx', 0), 2),
-                "gy": round(accel.get('gy', 0), 2),
-                "gz": round(accel.get('gz', 0), 2),
-                "g_total": round(accel.get('g_total', 1.0), 2)
-            },
-            "gps": {
-                "speed": round(gps.get('speed', 0), 1),
-                "latitude": gps.get('lat', 0),
-                "longitude": gps.get('lon', 0),
-                "altitude": round(gps.get('alt', 0), 1),
-                "satellites": gps.get('sats', 0),
-                "fix": gps.get('fix', 0)
-            },
-            "system": {
-                "recording": True,
-                "uptime": int(time.monotonic())
-            }
-        }
-        
-        # Convert to JSON string
-        json_str = json.dumps(data)
-        print(f"[API] Sending {len(json_str)} bytes of JSON")
-        
-        return Response(request, json_str, content_type="application/json")
-    
-    def serve_status(self, request: Request):
-        """Serve system status"""
-        import gc
-
-        # Import version info
-        try:
-            from version import VERSION, GIT_HASH, BUILD_DATE
+            import sys
+            sys.path.append(web_root)
+            from asset_map import ASSETS
+            self.assets = ASSETS
+            if self.debug:
+                print(f"[Web] Loaded {len(ASSETS)} assets from map")
         except ImportError:
-            VERSION = "unknown"
-            GIT_HASH = "dev"
-            BUILD_DATE = "unknown"
+            self.assets = None
+            if self.debug:
+                print("[Web] No asset map found, using file discovery")
+    
+    def start(self, port=80, max_connections=1):
+        """Start the web server"""
+        import socketpool
         
-        status = {
-            "version": VERSION,
-            "git_hash": GIT_HASH,
-            "build_date": BUILD_DATE,
-            "uptime": int(time.monotonic()),
-            "memory_free": gc.mem_free(),
-            "wifi_connected": self.wifi_ap.ap_active,
-            "ip_address": str(wifi.radio.ipv4_address_ap) if self.wifi_ap.ap_active else None,
-            "requests_served": self.request_count
-        }
+        self.server_socket = self.pool.socket(
+            self.pool.AF_INET, 
+            self.pool.SOCK_STREAM
+        )
+        self.server_socket.setsockopt(
+            self.pool.SOL_SOCKET,
+            self.pool.SO_REUSEADDR,
+            1
+        )
+        self.server_socket.bind(('0.0.0.0', port))
+        self.server_socket.listen(max_connections)
+        self.server_socket.setblocking(False)
         
-        json_str = json.dumps(status)
-        
-        return Response(request, json_str, content_type="application/json")
+        if self.debug:
+            print(f"[Web] Server started on port {port}")
     
     def poll(self):
-        """Poll for incoming HTTP requests (call this regularly)"""
-        if self.server:
+        """Poll for incoming connections (non-blocking)"""
+        try:
+            client, addr = self.server_socket.accept()
+            if self.debug:
+                print(f"[Web] Connection from {addr}")
+            self._handle_client(client)
+        except OSError:
+            # No connection available (non-blocking)
+            pass
+    
+    def _handle_client(self, client):
+        """Handle a client connection"""
+        try:
+            client.settimeout(2.0)  # 2 second timeout
+            
+            # Read request
+            request = b""
+            while True:
+                try:
+                    chunk = client.recv(1024)
+                    if not chunk:
+                        break
+                    request += chunk
+                    if b"\r\n\r\n" in request:
+                        break
+                except OSError:
+                    break
+            
+            if not request:
+                return
+            
+            # Parse request
+            request_str = request.decode('utf-8', errors='ignore')
+            path, accepts_gzip = self._parse_request(request_str)
+            
+            if self.debug:
+                print(f"[Web] GET {path} (gzip: {accepts_gzip})")
+            
+            # Serve file
+            self._serve_file(client, path, accepts_gzip)
+            
+        except Exception as e:
+            if self.debug:
+                print(f"[Web] Error: {e}")
+        finally:
             try:
-                self.server.poll()
-                
-                # Log when we get requests
-                current_time = time.monotonic()
-                if current_time - self.last_request_time > 0.1:  # Debounce
-                    # Check if we got a request (request_count would increment)
-                    pass
-                    
-            except Exception as e:
-                # Ignore timeout errors, they're normal
-                error_str = str(e)
-                if "ETIMEDOUT" not in error_str and "timed out" not in error_str and "timeout" not in error_str.lower():
-                    print(f"[WebServer] Poll error: {e}")
-                    import traceback
-                    traceback.print_exception(e)
+                client.close()
+            except:
+                pass
+    
+    def _parse_request(self, request):
+        """
+        Parse HTTP request
+        
+        Returns:
+            (path, accepts_gzip)
+        """
+        lines = request.split('\r\n')
+        
+        # Parse request line
+        path = "/"
+        if lines and lines[0].startswith('GET '):
+            parts = lines[0].split(' ')
+            if len(parts) >= 2:
+                path = parts[1]
+                # Remove query string
+                if '?' in path:
+                    path = path[:path.index('?')]
+        
+        # Check for gzip support
+        accepts_gzip = False
+        for line in lines[1:]:
+            if line.lower().startswith('accept-encoding:'):
+                accepts_gzip = 'gzip' in line.lower()
+                break
+        
+        return path, accepts_gzip
+    
+    def _serve_file(self, client, path, accepts_gzip):
+        """Serve a file with optional gzip compression"""
+        
+        # Get asset info
+        if self.assets and path in self.assets:
+            asset = self.assets[path]
+            filepath = f"{self.web_root}/{asset['file']}"
+            gzippath = f"{self.web_root}/{asset['gzip']}"
+            mime_type = asset['mime']
+        else:
+            # Fallback: try to serve file directly
+            if path == "/":
+                filepath = f"{self.web_root}/index.html"
+                mime_type = "text/html"
+            else:
+                filepath = f"{self.web_root}{path}"
+                mime_type = self._guess_mime_type(path)
+            gzippath = filepath + ".gz"
+        
+        # Try compressed version first if client accepts gzip
+        if accepts_gzip and self._file_exists(gzippath):
+            self._send_file(client, gzippath, mime_type, compressed=True)
+        elif self._file_exists(filepath):
+            self._send_file(client, filepath, mime_type, compressed=False)
+        else:
+            self._send_404(client)
+    
+    def _file_exists(self, path):
+        """Check if file exists"""
+        try:
+            os.stat(path)
+            return True
+        except OSError:
+            return False
+    
+    def _send_file(self, client, filepath, mime_type, compressed=False):
+        """Send file to client"""
+        try:
+            # Get file size
+            file_size = os.stat(filepath)[6]
+            
+            # Send headers
+            headers = (
+                "HTTP/1.1 200 OK\r\n"
+                f"Content-Type: {mime_type}\r\n"
+                f"Content-Length: {file_size}\r\n"
+            )
+            
+            if compressed:
+                headers += "Content-Encoding: gzip\r\n"
+            
+            headers += (
+                "Cache-Control: max-age=3600\r\n"
+                "Connection: close\r\n"
+                "\r\n"
+            )
+            
+            client.send(headers.encode('utf-8'))
+            
+            # Send file in chunks
+            with open(filepath, 'rb') as f:
+                while True:
+                    chunk = f.read(512)  # 512 byte chunks
+                    if not chunk:
+                        break
+                    client.send(chunk)
+            
+            if self.debug:
+                encoding = "gzip" if compressed else "plain"
+                print(f"[Web] Sent {filepath} ({file_size} bytes, {encoding})")
+            
+        except Exception as e:
+            if self.debug:
+                print(f"[Web] Error sending file: {e}")
+            self._send_500(client)
+    
+    def _send_404(self, client):
+        """Send 404 Not Found"""
+        response = (
+            "HTTP/1.1 404 Not Found\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 13\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "404 Not Found"
+        )
+        client.send(response.encode('utf-8'))
+        
+        if self.debug:
+            print("[Web] Sent 404")
+    
+    def _send_500(self, client):
+        """Send 500 Internal Server Error"""
+        response = (
+            "HTTP/1.1 500 Internal Server Error\r\n"
+            "Content-Type: text/plain\r\n"
+            "Content-Length: 21\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            "500 Internal Error"
+        )
+        try:
+            client.send(response.encode('utf-8'))
+        except:
+            pass
+        
+        if self.debug:
+            print("[Web] Sent 500")
+    
+    def _guess_mime_type(self, path):
+        """Guess MIME type from file extension"""
+        if path.endswith('.html'):
+            return 'text/html'
+        elif path.endswith('.css'):
+            return 'text/css'
+        elif path.endswith('.js'):
+            return 'application/javascript'
+        elif path.endswith('.json'):
+            return 'application/json'
+        elif path.endswith('.png'):
+            return 'image/png'
+        elif path.endswith('.jpg') or path.endswith('.jpeg'):
+            return 'image/jpeg'
+        elif path.endswith('.svg'):
+            return 'image/svg+xml'
+        else:
+            return 'application/octet-stream'
+    
+    def stop(self):
+        """Stop the web server"""
+        if self.server_socket:
+            self.server_socket.close()
+            self.server_socket = None
+            if self.debug:
+                print("[Web] Server stopped")
+
+
+# Example usage in code.py:
+"""
+import wifi
+import socketpool
+from web_server_gz import WebServerGzip
+
+# Connect to WiFi or start AP
+# ... (your existing WiFi setup)
+
+# Create web server
+pool = socketpool.SocketPool(wifi.radio)
+server = WebServerGzip(pool, web_root="/web", debug=True)
+server.start(port=80)
+
+print("Web server running!")
+
+# Main loop
+while True:
+    server.poll()
+    # ... (your other tasks)
+    time.sleep(0.01)
+"""

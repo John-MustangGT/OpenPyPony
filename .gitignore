@@ -20,8 +20,18 @@ dist/
 web_compressed/
 *.gz
 
-# CircuitPython libraries (install via circup)
-circuitpython/lib/
+# ============================================
+# CircuitPython Specific
+# ============================================
+# Third-party libraries (installed by circup)
+# These typically start with adafruit_ or have .mpy extension
+circuitpython/lib/adafruit_*
+circuitpython/lib/*.mpy
+circuitpython/lib/**/*.mpy
+
+# But allow custom local libraries
+!circuitpython/lib/local_*
+!circuitpython/lib/*/local_*
 
 # User configuration (use .example instead)
 settings.toml
