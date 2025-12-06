@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OpenPonyLogger</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #0a0a0a;
+            color: #fff;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        h1 { color: #ff6b35; }
+        .data-box {
+            background: #1a1a1a;
+            border: 1px solid #404040;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: #ff6b35;
+            font-family: monospace;
+        }
+        .label {
+            color: #808080;
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🐎 OpenPonyLogger</h1>
+        
+        <div class="data-box">
+            <h2>G-Force Monitor</h2>
+            <div class="label">Lateral (X):</div>
+            <div class="value" id="gx">--</div>
+            
+            <div class="label">Longitudinal (Y):</div>
+            <div class="value" id="gy">--</div>
+            
+            <div class="label">Vertical (Z):</div>
+            <div class="value" id="gz">--</div>
+            
+            <div class="label">Total:</div>
+            <div class="value" id="total">--</div>
+        </div>
+        
+        <div class="data-box">
+            <h2>System Status</h2>
+            <div class="label">Uptime:</div>
+            <div class="value" id="uptime">--</div>
+            
+            <div class="label">Last Update:</div>
+            <div id="lastUpdate">--</div>
+        </div>
+    </div>
+    
+    <script>
+        function updateData() {
+            fetch('/api/live')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('gx').textContent = data.accel.gx.toFixed(2) + 'g';
+                    document.getElementById('gy').textContent = data.accel.gy.toFixed(2) + 'g';
+                    document.getElementById('gz').textContent = data.accel.gz.toFixed(2) + 'g';
+                    document.getElementById('total').textContent = data.accel.g_total.toFixed(2) + 'g';
+                    document.getElementById('uptime').textContent = data.system.uptime + 's';
+                    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                })
+                .catch(err => console.error('Error:', err));
+        }
+        
+        // Update every 250ms
+        setInterval(updateData, 250);
+        updateData(); // Initial load
+    </script>
+</body>
+</html>
