@@ -240,8 +240,19 @@ class WebServerTask:
     def serve_status(self, request: Request):
         """Serve system status"""
         import gc
+
+        # Import version info
+        try:
+            from version import VERSION, GIT_HASH, BUILD_DATE
+        except ImportError:
+            VERSION = "unknown"
+            GIT_HASH = "dev"
+            BUILD_DATE = "unknown"
         
         status = {
+            "version": VERSION,
+            "git_hash": GIT_HASH,
+            "build_date": BUILD_DATE,
             "uptime": int(time.monotonic()),
             "memory_free": gc.mem_free(),
             "wifi_connected": self.wifi_ap.ap_active,

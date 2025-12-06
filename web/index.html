@@ -54,6 +54,8 @@
         
         <div class="data-box">
             <h2>System Status</h2>
+            <div class="label">Version:</div>
+            <div id="version">--</div>
             <div class="label">Uptime:</div>
             <div class="value" id="uptime">--</div>
             
@@ -75,6 +77,13 @@
                     document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
                 })
                 .catch(err => console.error('Error:', err));
+                fetch('/api/status')
+                    .then(response => response.json())
+                    .then(data => {
+                        document.getElementById('version').textContent = data.version;
+                        document.getElementById('gitHash').textContent = data.git_hash;
+                    })
+                    .catch(err => console.error('Status error:', err));
         }
         
         // Update every 250ms

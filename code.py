@@ -17,8 +17,17 @@ import os
 from wifi_server import WiFiAPTask, WebServerTask
 from scheduler import Task, Scheduler
 
+try:
+    from version import VERSION, GIT_HASH, BUILD_DATE
+except ImportError:
+    VERSION = "unknown"
+    GIT_HASH = "dev"
+    BUILD_DATE = "unknown"
+
 print("=" * 60)
-print("OpenPonyLogger - State Machine Version")
+print(f"OpenPyPony v{VERSION}")
+print(f"Commit: {GIT_HASH}")
+print(f"Built: {BUILD_DATE}")
 print("=" * 60)
 
 # ============================================================================
