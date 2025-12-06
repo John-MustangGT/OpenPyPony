@@ -1,0 +1,989 @@
+/* OpenPonyLogger Web UI - Dark Theme for Automotive Use */
+
+:root {
+    /* Dark theme colors optimized for sunlight visibility */
+    --bg-primary: #0a0a0a;
+    --bg-secondary: #1a1a1a;
+    --bg-card: #252525;
+    --bg-hover: #303030;
+    
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-muted: #808080;
+    
+    --accent-primary: #ff6b35;
+    --accent-secondary: #f7931e;
+    --accent-success: #4caf50;
+    --accent-warning: #ffc107;
+    --accent-danger: #f44336;
+    --accent-info: #2196f3;
+    
+    --border-color: #404040;
+    --shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+    
+    --gauge-bg: #1a1a1a;
+    --gauge-border: #404040;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+}
+
+.container {
+    display: grid;
+    grid-template-rows: auto auto 1fr;
+    height: 100vh;
+    overflow: hidden;
+}
+
+/* Header */
+.header {
+    background-color: var(--bg-secondary);
+    padding: 1rem 1.5rem;
+    border-bottom: 2px solid var(--accent-primary);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header h1 {
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+    margin: 0;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.9rem;
+}
+
+.status-dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: var(--accent-danger);
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.status-dot.connected {
+    background-color: var(--accent-success);
+    animation: none;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* Navigation Tabs */
+.nav-tabs {
+    background-color: var(--bg-secondary);
+    display: flex;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 1rem;
+}
+
+.tab-button {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    padding: 1rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    position: relative;
+    transition: color 0.3s ease;
+    white-space: nowrap;
+}
+
+.tab-button:hover {
+    color: var(--text-primary);
+    background-color: var(--bg-hover);
+}
+
+.tab-button.active {
+    color: var(--accent-primary);
+}
+
+.tab-button.active::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    background-color: var(--accent-primary);
+}
+
+/* Main Content */
+.content {
+    overflow-y: auto;
+    padding: 1.5rem;
+}
+
+.tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Cards */
+.info-card, .status-card, .stat-card, .config-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    box-shadow: var(--shadow);
+}
+
+/* About Tab */
+.about-section h2 {
+    color: var(--accent-primary);
+    margin-bottom: 0.5rem;
+}
+
+.version {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 1.5rem;
+}
+
+.about-section h3 {
+    color: var(--accent-secondary);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.about-section ul {
+    margin-left: 1.5rem;
+    margin-top: 0.5rem;
+}
+
+.about-section li {
+    margin-bottom: 0.3rem;
+    color: var(--text-secondary);
+}
+
+.about-section p {
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+/* Status Tab */
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.status-card h3 {
+    color: var(--accent-primary);
+    margin-bottom: 1rem;
+    font-size: 1.1rem;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.status-row:last-child {
+    border-bottom: none;
+}
+
+.status-row span:first-child {
+    color: var(--text-secondary);
+}
+
+.status-row span:last-child {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.status-badge.connected {
+    background-color: rgba(76, 175, 80, 0.2);
+    color: var(--accent-success);
+}
+
+.status-badge.disconnected {
+    background-color: rgba(244, 67, 54, 0.2);
+    color: var(--accent-danger);
+}
+
+.full-width {
+    grid-column: 1 / -1;
+}
+
+/* Storage Bar */
+.storage-info {
+    margin-bottom: 1rem;
+}
+
+.storage-bar {
+    width: 100%;
+    height: 24px;
+    background-color: var(--bg-primary);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 0.5rem;
+}
+
+.storage-used {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent-info), var(--accent-primary));
+    transition: width 0.3s ease;
+}
+
+.storage-text {
+    text-align: center;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Gauges Tab */
+.gauges-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 2rem;
+    padding: 1rem;
+}
+
+.gauge-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    background-color: var(--bg-card);
+    padding: 1.5rem;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+}
+
+.gauge-container canvas {
+    max-width: 100%;
+    height: auto;
+}
+
+.gauge-label {
+    margin-top: 1rem;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+/* G-Force Tab */
+.gforce-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+    height: calc(100vh - 200px);
+}
+
+.gforce-display {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#gforceCanvas {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.gforce-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.stat-card h3 {
+    color: var(--accent-primary);
+    margin-bottom: 1rem;
+}
+
+.gforce-reading {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gforce-reading:last-child {
+    border-bottom: none;
+}
+
+.gforce-label {
+    color: var(--text-secondary);
+}
+
+.gforce-value {
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+    font-family: 'Courier New', monospace;
+}
+
+/* GPS Tab */
+.gps-layout {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 1.5rem;
+    height: calc(100vh - 200px);
+}
+
+.gps-map {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#gpsCanvas {
+    max-width: 100%;
+    max-height: 100%;
+}
+
+.gps-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    overflow-y: auto;
+}
+
+.gps-info .info-card h3 {
+    color: var(--accent-primary);
+    margin-bottom: 1rem;
+}
+
+.gps-data {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.gps-data:last-child {
+    border-bottom: none;
+}
+
+.gps-data span:first-child {
+    color: var(--text-secondary);
+}
+
+.gps-data span:last-child {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: 'Courier New', monospace;
+}
+
+.satellite-list {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.satellite-item {
+    display: flex;
+    justify-content: space-between;
+    padding: 0.5rem;
+    background-color: var(--bg-primary);
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.satellite-item .sat-id {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.satellite-item .sat-snr {
+    color: var(--accent-success);
+}
+
+/* Sessions Tab */
+.sessions-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.sessions-header h2 {
+    color: var(--accent-primary);
+}
+
+.session-controls {
+    display: flex;
+    gap: 1rem;
+}
+
+.sessions-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.session-card {
+    background-color: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 1rem;
+    transition: border-color 0.3s ease;
+}
+
+.session-card:hover {
+    border-color: var(--accent-primary);
+}
+
+.session-info h3 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.session-meta {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.session-meta span {
+    display: flex;
+    align-items: center;
+    gap: 0.3rem;
+}
+
+.session-stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.stat {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--accent-primary);
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.session-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+/* Config Tab */
+.config-sections {
+    display: grid;
+    gap: 1.5rem;
+    max-width: 900px;
+}
+
+.config-card h3 {
+    color: var(--accent-primary);
+    margin-bottom: 1rem;
+}
+
+.config-row {
+    display: grid;
+    grid-template-columns: 180px 1fr;
+    gap: 1rem;
+    align-items: center;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.config-row:last-child {
+    border-bottom: none;
+}
+
+.config-row.checkbox-row {
+    grid-template-columns: auto 1fr;
+    gap: 0.5rem;
+}
+
+.config-row label {
+    color: var(--text-secondary);
+}
+
+.config-row input[type="text"],
+.config-row input[type="password"],
+.config-row input[type="number"],
+.config-row select {
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-size: 0.95rem;
+    width: 100%;
+}
+
+.config-row input[type="text"]:focus,
+.config-row input[type="password"]:focus,
+.config-row input[type="number"]:focus,
+.config-row select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.config-row input[type="checkbox"] {
+    width: 20px;
+    height: 20px;
+    cursor: pointer;
+}
+
+.config-row input[type="range"] {
+    width: calc(100% - 60px);
+}
+
+#brightnessValue {
+    min-width: 50px;
+    text-align: right;
+    color: var(--text-primary);
+}
+
+/* Additional PIDs Section */
+.additional-pids-list {
+    display: grid;
+    gap: 1rem;
+}
+
+.pid-entry {
+    display: grid;
+    grid-template-columns: 150px 1fr 180px auto;
+    gap: 1rem;
+    align-items: center;
+    padding: 1rem;
+    background-color: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+}
+
+.pid-entry label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.pid-entry input[type="text"],
+.pid-entry select {
+    background-color: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 0.5rem;
+    font-size: 0.95rem;
+}
+
+.pid-entry input[type="text"] {
+    text-transform: uppercase;
+    font-family: 'Courier New', monospace;
+}
+
+.pid-entry input[type="text"]:focus,
+.pid-entry select:focus {
+    outline: none;
+    border-color: var(--accent-primary);
+}
+
+.pid-entry .btn-danger {
+    padding: 0.5rem 1rem;
+}
+
+.config-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    flex-wrap: wrap;
+}
+
+/* Buttons */
+.btn {
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    white-space: nowrap;
+}
+
+.btn-primary {
+    background-color: var(--accent-primary);
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #ff5722;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
+}
+
+.btn-secondary {
+    background-color: var(--bg-hover);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background-color: var(--border-color);
+}
+
+.btn-danger {
+    background-color: var(--accent-danger);
+    color: white;
+}
+
+.btn-danger:hover {
+    background-color: #d32f2f;
+}
+
+.btn-sm {
+    padding: 0.5rem 1rem;
+    font-size: 0.9rem;
+}
+
+.btn.recording {
+    background-color: var(--accent-danger);
+    animation: recordPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes recordPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    .gforce-layout,
+    .gps-layout {
+        grid-template-columns: 1fr;
+    }
+    
+    .gforce-display,
+    .gps-map {
+        height: 400px;
+    }
+}
+
+@media (max-width: 768px) {
+    .header h1 {
+        font-size: 1.4rem;
+    }
+    
+    .nav-tabs {
+        padding: 0 0.5rem;
+    }
+    
+    .tab-button {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+    }
+    
+    .content {
+        padding: 1rem;
+    }
+    
+    .status-grid,
+    .gauges-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .config-row {
+        grid-template-columns: 1fr;
+    }
+    
+    .config-row label {
+        margin-bottom: 0.25rem;
+    }
+    
+    .pid-entry {
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+    }
+    
+    .pid-entry > div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+    
+    .session-card {
+        grid-template-columns: 1fr;
+    }
+    
+    .sessions-header {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+}
+
+@media (max-width: 480px) {
+    .header {
+        flex-direction: column;
+        gap: 0.5rem;
+        align-items: flex-start;
+    }
+    
+    .gauges-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .session-controls {
+        width: 100%;
+        flex-direction: column;
+    }
+    
+    .session-controls .btn {
+        width: 100%;
+    }
+    
+    .config-actions {
+        flex-direction: column;
+    }
+    
+    .config-actions .btn {
+        width: 100%;
+    }
+}
+
+/* Scrollbar Styling */
+::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: var(--accent-primary);
+}
+
+/* Fuel Log Styles */
+.fuel-entry-card {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 0.75rem;
+    border-left: 4px solid var(--primary);
+}
+
+.fuel-entry-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.fuel-entry-date {
+    font-size: 1.1rem;
+    font-weight: bold;
+    color: var(--text);
+}
+
+.fuel-entry-mpg {
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: var(--primary);
+}
+
+.fuel-entry-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.fuel-detail-item {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.9rem;
+}
+
+.fuel-detail-label {
+    color: var(--text-secondary);
+}
+
+.fuel-detail-value {
+    color: var(--text);
+    font-weight: 500;
+}
+
+.fuel-entry-notes {
+    margin-top: 0.5rem;
+    padding-top: 0.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.fuel-entry-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+/* PID Test Results Styles */
+#pidTestOutput {
+    line-height: 1.5;
+}
+
+.pid-test-supported {
+    color: #4caf50;
+}
+
+.pid-test-unsupported {
+    color: #f44336;
+}
+
+.pid-test-testing {
+    color: var(--primary);
+}
+
+textarea {
+    width: 100%;
+    padding: 0.5rem;
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.1);
+}
+
+/* Bluetooth Device List Styles */
+#bluetoothDeviceList select {
+    width: 100%;
+}
+
+.status-connected {
+    background: #4caf50;
+    color: white;
+}
+
+.status-disconnected {
+    background: #f44336;
+    color: white;
+}
+
+/* Network Configuration Styles */
+#clientNetworkSettings {
+    animation: fadeIn 0.3s ease-in;
+}
+
+#staticIPSettings {
+    animation: fadeIn 0.3s ease-in;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* Input validation hints */
+input[type="text"]::placeholder {
+    color: var(--text-secondary);
+    opacity: 0.6;
+}
+
+input[type="text"]:focus::placeholder {
+    opacity: 0.4;
+}
+
+/* Logo Styling */
+.logo-container {
+    text-align: center;
+    margin-bottom: 1rem;
+    padding: 1rem 0;
+}
+
+.logo-full {
+    max-width: 300px;
+    width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+/* Favicon and icon sizes handled by browser */
+@media (max-width: 768px) {
+    .logo-full {
+        max-width: 200px;
+    }
+}
