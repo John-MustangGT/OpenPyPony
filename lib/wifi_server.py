@@ -70,7 +70,7 @@ class WebServerTask:
     def check_web_files(self):
         """Check if web files exist and are readable"""
         print("\n[WebServer] Checking web files...")
-        web_dir = "/sd/web"
+        web_dir = "/web"
     
         try:
             # Check if directory exists
@@ -139,7 +139,7 @@ class WebServerTask:
             print("  ✓ Socket pool created")
             
             # Create server with root directory for static files
-            self.server = Server(self.pool, "/sd/web", debug=True)
+            self.server = Server(self.pool, "/web", debug=True)
             print("  ✓ Server object created")
             
             # Register route handlers using decorators
@@ -165,7 +165,7 @@ class WebServerTask:
             self.server.start(ip, port=80)
             
             print(f"  ✓ Server started on http://{ip}:80")
-            print(f"  Serving files from: /sd/web/")
+            print(f"  Serving files from: /web/")
             print(f"  Registered routes:")
             print(f"    - http://{ip}/")
             print(f"    - http://{ip}/api/live")
@@ -183,7 +183,7 @@ class WebServerTask:
         """Serve main index.html"""
         try:
             print("[HTTP] Serving index.html...")
-            with open("/sd/web/index.html", "r") as f:
+            with open("/web/index.html", "r") as f:
                 html = f.read()
             print(f"[HTTP] Loaded {len(html)} bytes")
             return Response(request, html, content_type="text/html")
@@ -194,7 +194,7 @@ class WebServerTask:
             <body>
             <h1>Error</h1>
             <p>Could not load index.html: {e}</p>
-            <p>Files available: {os.listdir('/sd/web')}</p>
+            <p>Files available: {os.listdir('/web')}</p>
             </body>
             </html>
             """
