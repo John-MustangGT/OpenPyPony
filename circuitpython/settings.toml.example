@@ -1,0 +1,3 @@
+WIFI_SSID = "OpenPonyLogger"
+WIFI_PASSWORD = "mustanggt"
+DEVICE_NAME = "OpenPyPony-01"
