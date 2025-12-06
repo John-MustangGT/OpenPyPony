@@ -1,1 +1,58 @@
 version.py
+
+# Compiled Python files
+*.pyc
+*.pyo
+*.mpy
+__pycache__/
+*.py[cod]
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+*.uf2
+*.elf
+*.bin
+*.hex
+
+# Generated web assets
+web_compressed/
+*.gz
+
+# CircuitPython libraries (install via circup)
+circuitpython/lib/
+
+# User configuration (use .example instead)
+settings.toml
+secrets.py
+
+# Backups
+backups/
+*.backup
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# Test outputs
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Documentation builds
+docs/_build/
+site/
