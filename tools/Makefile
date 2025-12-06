@@ -30,6 +30,24 @@ COLOR_GREEN := \033[92m
 COLOR_YELLOW := \033[93m
 COLOR_CYAN := \033[96m
 
+SHELL := /bin/bash
+PYTHON := venv/bin/python3
+PIP := venv/bin/pip
+
+.PHONY: venv
+venv:
+	@echo "Creating virtual environment..."
+	python3 -m venv venv
+	$(PIP) install --upgrade pip
+	$(PIP) install circup mpy-cross pytest black
+	@echo "✓ Virtual environment ready!"
+	@echo "Activate with: source venv/bin/activate"
+
+.PHONY: install-deps
+install-deps: venv
+	@echo "Installing development dependencies..."
+	$(PIP) install -r tools/requirements.txt
+
 .PHONY: help
 help:
 	@echo ""

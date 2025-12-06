@@ -63,3 +63,10 @@ htmlcov/
 # Documentation builds
 docs/_build/
 site/
+
+# Python virtual environment
+venv/
+env/
+ENV/
+.venv
+.env
