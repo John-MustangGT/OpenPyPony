@@ -78,11 +78,11 @@ help:
 check:
 	@echo "Checking for CIRCUITPY drive..."
 	@if [ -z "$(DRIVE)" ]; then \
-		echo "$(COLOR_YELLOW)✗ CIRCUITPY drive not found$(COLOR_RESET)"; \
+		echo -e "$(COLOR_YELLOW)✗ CIRCUITPY drive not found$(COLOR_RESET)"; \
 		echo "  Please mount your Pico and try again"; \
 		exit 1; \
 	else \
-		echo "$(COLOR_GREEN)✓ Found: $(DRIVE)$(COLOR_RESET)"; \
+		echo -e "$(COLOR_GREEN)✓ Found: $(DRIVE)$(COLOR_RESET)"; \
 		if [ -f "$(DRIVE)/boot_out.txt" ]; then \
 			head -1 "$(DRIVE)/boot_out.txt"; \
 		fi; \

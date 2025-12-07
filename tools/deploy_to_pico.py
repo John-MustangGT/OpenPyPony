@@ -117,7 +117,7 @@ def compress_web_assets(output_dir):
         print_error(f"Web directory not found: {web_dir}")
         return False
     
-    script = Path("prepare_web_assets_cp.py")
+    script = Path("tools/prepare_web_assets_cp.py")
     if not script.exists():
         print_error(f"Compression script not found: {script}")
         return False
@@ -235,13 +235,14 @@ def deploy_python_files(drive_path, backup=True, use_mpy=False):
     
     files_to_deploy = {
         # Main application
-        "code.py": "code.py",
-        
-        # Modules
-        "web_server_gz.py": "web_server_gz.py",
-        
+        "circuitpython/code.py": "code.py",
+
+        # Modules from circuitpython/local/
+        "circuitpython/local/wifi_server.py": "wifi_server.py",
+        "circuitpython/local/scheduler.py": "scheduler.py",
+
         # Configuration (if exists)
-        "settings.toml": "settings.toml",
+        "circuitpython/settings.toml": "settings.toml",
     }
     
     # Check if mpy-cross is available
@@ -397,7 +398,7 @@ def validate_deployment(drive_path, check_mpy=False):
     
     required_files = [
         f"code{py_ext}",
-        f"web_server_gz{py_ext}",
+        f"web_server{py_ext}",
         "web/asset_map.py",  # Always .py
         "web/index.html.gz",
         "web/styles.css.gz",
