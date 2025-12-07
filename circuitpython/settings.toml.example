@@ -1,3 +1,46 @@
+# OpenPonyLogger Configuration File
+# All settings are optional - defaults will be used if not specified
+
+# ============================================================================
+# WiFi Settings
+# ============================================================================
 WIFI_SSID = "OpenPonyLogger"
 WIFI_PASSWORD = "mustanggt"
 DEVICE_NAME = "OpenPyPony-01"
+
+# ============================================================================
+# GPS Settings
+# ============================================================================
+GPS_UPDATE_RATE = 1000    # milliseconds (1000 = 1Hz, 500 = 2Hz, etc.)
+GPS_BAUDRATE = 9600       # GPS module baud rate
+
+# ============================================================================
+# Accelerometer Settings
+# ============================================================================
+ACCEL_SAMPLE_RATE = 100   # Hz (10, 25, 50, 100 supported)
+ACCEL_RANGE = 2           # ±2g, ±4g, or ±8g
+
+# ============================================================================
+# Display Settings
+# ============================================================================
+GFORCE_GRAPH_SCALE = 20   # pixels per G on OLED graph (higher = more sensitive)
+SPLASH_DURATION = 10      # seconds to show splash screen on startup
+
+# ============================================================================
+# Logging Settings
+# ============================================================================
+LOG_FLUSH_SIZE = 50       # number of samples before flushing to SD card
+BYTES_PER_SAMPLE = 90     # estimated bytes per CSV line (for time calc)
+
+# ============================================================================
+# SD Card Management
+# ============================================================================
+SD_HIGH_WATER_MB = 100    # Start cleanup when free space drops below this
+SD_LOW_WATER_MB = 200     # Clean up old files until this much space is free
+SD_CHECK_INTERVAL = 600   # Check SD space every N seconds (600 = 10 min)
+
+# ============================================================================
+# Status/Debug
+# ============================================================================
+STATUS_INTERVAL = 5000    # milliseconds between console status prints
+SERIAL_DEBUG = true       # Enable/disable debug output to serial console
