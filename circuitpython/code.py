@@ -1,5 +1,6 @@
 """
-OpenPonyLogger - Main Program with State Machine Scheduler
+OpenPonyLogger - Main Program with GPS Support
+Logs accelerometer + GPS data with comprehensive OLED status display
 """
 
 import board
@@ -10,12 +11,11 @@ import i2cdisplaybus
 import terminalio
 from adafruit_display_text import label
 import adafruit_displayio_ssd1306
+import adafruit_gps
 import storage
 import sdcardio
 import time
 import os
-import wifi
-import socketpool
 from wifi_server import WiFiAPTask, WebServerTask
 from scheduler import Task, Scheduler
 
@@ -59,39 +59,51 @@ lis3dh.range = adafruit_lis3dh.RANGE_2_G
 lis3dh.data_rate = adafruit_lis3dh.DATARATE_100_HZ
 print("   ✓ LIS3DH initialized")
 
+# GPS Module
+print("4. Initializing GPS module...")
+uart = busio.UART(board.GP0, board.GP1, baudrate=9600, timeout=10)
+gps = adafruit_gps.GPS(uart, debug=False)
+# Configure GPS
+gps.send_command(b'PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA only
+gps.send_command(b'PMTK220,1000')  # 1Hz update rate
+print("   ✓ GPS initialized")
+
 # OLED Display
-print("4. Initializing OLED display...")
+print("5. Initializing OLED display...")
 display_bus = i2cdisplaybus.I2CDisplayBus(i2c, device_address=0x3C)
 display = adafruit_displayio_ssd1306.SSD1306(display_bus, width=128, height=64)
 print("   ✓ OLED initialized")
 
-# Create display layout
+# Create display layout - comprehensive status
 splash = displayio.Group()
 display.root_group = splash
 
-title_label = label.Label(terminalio.FONT, text="OpenPonyLogger", color=0xFFFFFF, x=10, y=5)
-status_label = label.Label(terminalio.FONT, text="Starting...", color=0xFFFFFF, x=5, y=16)
-gx_label = label.Label(terminalio.FONT, text="X: +0.00g", color=0xFFFFFF, x=5, y=30)
-gy_label = label.Label(terminalio.FONT, text="Y: +0.00g", color=0xFFFFFF, x=5, y=40)
-gz_label = label.Label(terminalio.FONT, text="Z: +0.00g", color=0xFFFFFF, x=5, y=50)
-total_label = label.Label(terminalio.FONT, text="T: 1.00g", color=0xFFFFFF, x=5, y=60)
+# Line 1: Time & GPS Fix
+time_label = label.Label(terminalio.FONT, text="--:--:-- NoFix", color=0xFFFFFF, x=0, y=5)
+# Line 2: Speed & Heading
+speed_label = label.Label(terminalio.FONT, text="0mph 0deg", color=0xFFFFFF, x=0, y=15)
+# Line 3-5: G-Force cartesian graph (will be drawn with pixels)
+# Line 6: SD Card space
+sd_label = label.Label(terminalio.FONT, text="SD: --MB", color=0xFFFFFF, x=0, y=58)
 
-splash.append(title_label)
-splash.append(status_label)
-splash.append(gx_label)
-splash.append(gy_label)
-splash.append(gz_label)
-splash.append(total_label)
+splash.append(time_label)
+splash.append(speed_label)
+splash.append(sd_label)
 
-# Create log file
-log_filename = "/sd/accel_log_{}.csv".format(int(time.monotonic()))
-print(f"5. Creating log file: {log_filename}")
+# Create log file with GPS data columns
+log_filename = "/sd/session_{}.csv".format(int(time.monotonic()))
+print(f"6. Creating log file: {log_filename}")
 log_file = open(log_filename, "w")
-log_file.write("timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total\n")
+log_file.write("timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total,")
+log_file.write("gps_fix,gps_lat,gps_lon,gps_alt_m,gps_speed_mph,gps_heading,gps_sats\n")
 print("   ✓ Log file created")
 
 # Shared data buffer between tasks
-data_buffer = {}
+data_buffer = {
+    'accel': None,
+    'gps': None,
+    'sd_free_mb': 0
+}
 
 # ============================================================================
 # Task Definitions
@@ -123,24 +135,127 @@ class AccelerometerTask(Task):
         }
 
 
-class DisplayTask(Task):
-    """Update OLED display at 5Hz"""
-    def __init__(self, labels, buffer):
-        super().__init__("Display", 200)  # 200ms = 5Hz
-        self.labels = labels
+class GPSTask(Task):
+    """Read GPS at 1Hz"""
+    def __init__(self, gps_module, buffer):
+        super().__init__("GPS", 1000)  # 1000ms = 1Hz
+        self.gps = gps_module
         self.buffer = buffer
     
     def run(self):
+        # Update GPS
+        self.gps.update()
+        
+        # Parse GPS data
+        if self.gps.has_fix:
+            fix_quality = "3D" if self.gps.fix_quality_3d else "2D"
+            
+            # Convert speed from knots to MPH
+            speed_mph = self.gps.speed_knots * 1.15078 if self.gps.speed_knots else 0
+            
+            self.buffer['gps'] = {
+                'fix': fix_quality,
+                'lat': self.gps.latitude,
+                'lon': self.gps.longitude,
+                'alt_m': self.gps.altitude_m if self.gps.altitude_m else 0,
+                'speed_mph': speed_mph,
+                'heading': self.gps.track_angle_deg if self.gps.track_angle_deg else 0,
+                'sats': self.gps.satellites,
+                'timestamp': self.gps.timestamp_utc,
+                'has_fix': True
+            }
+        else:
+            # No fix
+            self.buffer['gps'] = {
+                'fix': 'NoFix',
+                'lat': 0,
+                'lon': 0,
+                'alt_m': 0,
+                'speed_mph': 0,
+                'heading': 0,
+                'sats': self.gps.satellites if self.gps.satellites else 0,
+                'timestamp': None,
+                'has_fix': False
+            }
+
+
+class DisplayTask(Task):
+    """Update OLED display at 5Hz with comprehensive status"""
+    def __init__(self, labels, buffer, display_obj):
+        super().__init__("Display", 200)  # 200ms = 5Hz
+        self.labels = labels
+        self.buffer = buffer
+        self.display = display_obj
+        self.graph_center_x = 96  # Right side of screen
+        self.graph_center_y = 38  # Middle of graph area
+        self.graph_scale = 15     # Pixels per G
+    
+    def run(self):
         accel = self.buffer.get('accel')
+        gps = self.buffer.get('gps')
+        
+        # Update time & GPS fix
+        if gps and gps['timestamp']:
+            tm = gps['timestamp']
+            time_str = "{:02d}:{:02d}:{:02d}".format(tm.tm_hour, tm.tm_min, tm.tm_sec)
+        else:
+            time_str = "--:--:--"
+        
+        fix_str = gps['fix'] if gps else "NoFix"
+        self.labels['time'].text = "{} {}".format(time_str, fix_str)
+        
+        # Update speed & heading
+        if gps:
+            speed = int(gps['speed_mph'])
+            heading = int(gps['heading'])
+            self.labels['speed'].text = "{}mph {}deg".format(speed, heading)
+        else:
+            self.labels['speed'].text = "0mph 0deg"
+        
+        # Update SD card space
+        sd_free = self.buffer.get('sd_free_mb', 0)
+        self.labels['sd'].text = "SD: {}MB".format(sd_free)
+        
+        # Draw G-force cartesian graph
         if accel:
-            self.labels['gx'].text = "X: {:+.2f}g".format(accel['gx'])
-            self.labels['gy'].text = "Y: {:+.2f}g".format(accel['gy'])
-            self.labels['gz'].text = "Z: {:+.2f}g".format(accel['gz'])
-            self.labels['total'].text = "T: {:.2f}g".format(accel['g_total'])
+            self.draw_gforce_graph(accel['gx'], accel['gy'])
+    
+    def draw_gforce_graph(self, gx, gy):
+        """Draw small cartesian graph of lateral/longitudinal G-forces"""
+        # Clear graph area (lines 25-55, x: 64-128)
+        # Note: In production, use a bitmap overlay for efficiency
+        
+        # For now, we'll update text representation
+        # In a full implementation, you'd use displayio shapes or a bitmap
+        # This is a simplified version showing the concept
+        
+        # Calculate position on graph
+        x_pos = int(self.graph_center_x + gx * self.graph_scale)
+        y_pos = int(self.graph_center_y - gy * self.graph_scale)  # Invert Y
+        
+        # Clamp to display bounds
+        x_pos = max(64, min(127, x_pos))
+        y_pos = max(25, min(55, y_pos))
+        
+        # Note: Full implementation would draw crosshairs and dot
+        # For text-only display, we show values
+        # Add a small text indicator
+        if not hasattr(self, 'gforce_indicator'):
+            self.gforce_indicator = label.Label(
+                terminalio.FONT, 
+                text=".", 
+                color=0xFFFFFF, 
+                x=x_pos, 
+                y=y_pos
+            )
+            self.display.root_group.append(self.gforce_indicator)
+        else:
+            self.gforce_indicator.x = x_pos
+            self.gforce_indicator.y = y_pos
 
 
 class SDLoggerTask(Task):
-    """Log data to SD card - buffer 50 samples before flush"""
+    """Log accelerometer + GPS data to SD card"""
     def __init__(self, file, buffer, flush_size=50):
         super().__init__("SD Logger", 100)  # 100ms = 10Hz
         self.file = file
@@ -150,17 +265,30 @@ class SDLoggerTask(Task):
     
     def run(self):
         accel = self.buffer.get('accel')
+        gps = self.buffer.get('gps')
+        
         if not accel:
             return
         
-        # Format CSV line
+        # Format CSV line with accelerometer data
         timestamp = int(accel['timestamp'] * 1000)
-        line = "{},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}\n".format(
+        line = "{},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},".format(
             timestamp,
             accel['x'], accel['y'], accel['z'],
             accel['gx'], accel['gy'], accel['gz'],
             accel['g_total']
         )
+        
+        # Add GPS data (or empty fields if no GPS)
+        if gps and gps['has_fix']:
+            line += "{},{:.6f},{:.6f},{:.1f},{:.1f},{:.1f},{}\n".format(
+                gps['fix'],
+                gps['lat'], gps['lon'], gps['alt_m'],
+                gps['speed_mph'], gps['heading'],
+                gps['sats']
+            )
+        else:
+            line += "NoFix,0,0,0,0,0,0\n"
         
         # Add to buffer
         self.write_buffer.append(line)
@@ -181,25 +309,48 @@ class SDLoggerTask(Task):
             self.write_buffer.clear()
 
 
-class StatusTask(Task):
-    """Print status to console every second"""
-    def __init__(self, label, scheduler_ref, buffer):
-        super().__init__("Status", 1000)  # 1000ms = 1Hz
-        self.label = label
-        self.scheduler = scheduler_ref
+class SDSpaceTask(Task):
+    """Check SD card free space every 10 seconds"""
+    def __init__(self, buffer):
+        super().__init__("SD Space", 10000)  # 10000ms = 10 seconds
         self.buffer = buffer
     
     def run(self):
-        # Update status on OLED
+        try:
+            stat = os.statvfs("/sd")
+            # f_frsize * f_bavail = free space in bytes
+            free_bytes = stat[0] * stat[3]
+            free_mb = free_bytes // (1024 * 1024)
+            self.buffer['sd_free_mb'] = free_mb
+        except:
+            self.buffer['sd_free_mb'] = 0
+
+
+class StatusTask(Task):
+    """Print status to console every 5 seconds"""
+    def __init__(self, buffer):
+        super().__init__("Status", 5000)  # 5000ms = 5 seconds
+        self.buffer = buffer
+    
+    def run(self):
+        # Print comprehensive status
         uptime = int(time.monotonic())
-        self.label.text = "Up: {}s".format(uptime)
-        
-        # Print to console
         accel = self.buffer.get('accel')
+        gps = self.buffer.get('gps')
+        
+        print("\n" + "=" * 60)
+        print(f"Uptime: {uptime}s | SD Free: {self.buffer.get('sd_free_mb', 0)}MB")
+        
         if accel:
-            print("Uptime: {}s | G-Force: X={:+.2f} Y={:+.2f} Z={:+.2f} | Total={:.2f}g".format(
-                uptime, accel['gx'], accel['gy'], accel['gz'], accel['g_total']
-            ))
+            print(f"G-Force: X={accel['gx']:+.2f} Y={accel['gy']:+.2f} Z={accel['gz']:+.2f} | Total={accel['g_total']:.2f}g")
+        
+        if gps:
+            print(f"GPS: {gps['fix']} | Sats: {gps['sats']} | Speed: {gps['speed_mph']:.1f}mph | Heading: {gps['heading']:.0f}°")
+            if gps['has_fix']:
+                print(f"Position: {gps['lat']:.6f}°, {gps['lon']:.6f}° | Alt: {gps['alt_m']:.1f}m")
+        
+        print("=" * 60)
+
 
 class WebServerPollingTask(Task):
     """Poll web server for incoming HTTP requests"""
@@ -210,49 +361,35 @@ class WebServerPollingTask(Task):
     def run(self):
         self.web_server.poll()
 
+
 class WiFiMonitorTask(Task):
     """Monitor WiFi connections and server activity"""
     def __init__(self, wifi_ap, web_server):
-        super().__init__("WiFi Monitor", 5000)  # Every 5 seconds
+        super().__init__("WiFi Monitor", 30000)  # Every 30 seconds
         self.wifi_ap = wifi_ap
         self.web_server = web_server
     
     def run(self):
         if self.wifi_ap.ap_active:
-            print(f"\n[WiFi Monitor] AP Status:")
-            print(f"  SSID: {self.wifi_ap.ssid}")
-            print(f"  IP: {self.wifi_ap.ip_address}")
-            print(f"  Server requests: {self.web_server.request_count if self.web_server else 'N/A'}")
-            
-            # Try to get connected clients (if supported)
-            try:
-                if hasattr(wifi.radio, 'stations'):
-                    stations = wifi.radio.stations
-                    print(f"  Connected clients: {len(stations)}")
-                    for station in stations:
-                        print(f"    - {station}")
-            except:
-                pass
+            print(f"\n[WiFi] AP: {self.wifi_ap.ssid} | IP: {self.wifi_ap.ip_address}")
+            print(f"[WiFi] Requests served: {self.web_server.request_count if self.web_server else 0}")
 
-# ============================================================================
-# Main Program
-# ============================================================================
 
 # ============================================================================
 # WiFi and Web Server Setup
 # ============================================================================
 
-print("\n6. Setting up WiFi Access Point...")
-wifi_ap = WiFiAPTask(ssid="OpenPonyLogger", password="mustanggt")  # Change password as desired
+print("\n7. Setting up WiFi Access Point...")
+wifi_ap = WiFiAPTask(ssid="OpenPonyLogger", password="mustanggt")
 if wifi_ap.start():
     print("   ✓ WiFi AP started")
     
-    print("7. Starting web server...")
+    print("8. Starting web server...")
     web_server = WebServerTask(data_buffer, wifi_ap)
     if web_server.start():
         print("   ✓ Web server started")
     else:
-        print("   ✗ Web server failed - continuing without WiFi")
+        print("   ✗ Web server failed - continuing without web interface")
         web_server = None
 else:
     print("   ✗ WiFi AP failed - continuing without WiFi")
@@ -267,22 +404,26 @@ scheduler = Scheduler()
 
 # Create display labels dictionary for DisplayTask
 display_labels = {
-    'gx': gx_label,
-    'gy': gy_label,
-    'gz': gz_label,
-    'total': total_label
+    'time': time_label,
+    'speed': speed_label,
+    'sd': sd_label
 }
 
 # Add tasks
 accel_task = AccelerometerTask(lis3dh, data_buffer)
-display_task = DisplayTask(display_labels, data_buffer)
+gps_task = GPSTask(gps, data_buffer)
+display_task = DisplayTask(display_labels, data_buffer, display)
 logger_task = SDLoggerTask(log_file, data_buffer, flush_size=50)
-status_task = StatusTask(status_label, scheduler, data_buffer)
+sd_space_task = SDSpaceTask(data_buffer)
+status_task = StatusTask(data_buffer)
 
 scheduler.add_task(accel_task)
+scheduler.add_task(gps_task)
 scheduler.add_task(display_task)
 scheduler.add_task(logger_task)
+scheduler.add_task(sd_space_task)
 scheduler.add_task(status_task)
+
 # Add web server polling task if WiFi is active
 if web_server and wifi_ap:
     wifi_monitor_task = WiFiMonitorTask(wifi_ap, web_server)
@@ -293,6 +434,8 @@ if web_server:
 
 print("\n" + "=" * 60)
 print("Starting data acquisition...")
+print("Connect to WiFi: {}".format(wifi_ap.ssid if wifi_ap.ap_active else "N/A"))
+print("Web interface: http://{}".format(wifi_ap.ip_address if wifi_ap.ap_active else "N/A"))
 print("Press Ctrl+C to stop")
 print("=" * 60 + "\n")
 
@@ -317,11 +460,10 @@ except KeyboardInterrupt:
     print(f"\nLog file: {log_filename}")
     try:
         stat = os.stat(log_filename)
-        samples = (stat[6] - 100) // 60  # Rough estimate (60 bytes per line)
+        samples = (stat[6] - 150) // 80  # Rough estimate (80 bytes per line with GPS)
         print(f"File size: {stat[6]} bytes ({stat[6]/1024:.1f} KB)")
         print(f"Estimated samples: ~{samples}")
     except:
         pass
     
-    status_label.text = "Stopped"
     print("\n✓ Shutdown complete")

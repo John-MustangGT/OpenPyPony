@@ -1,94 +1,695 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>OpenPonyLogger</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            background: #0a0a0a;
-            color: #fff;
-            padding: 20px;
-        }
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-        }
-        h1 { color: #ff6b35; }
-        .data-box {
-            background: #1a1a1a;
-            border: 1px solid #404040;
-            border-radius: 8px;
-            padding: 20px;
-            margin: 20px 0;
-        }
-        .value {
-            font-size: 2em;
-            font-weight: bold;
-            color: #ff6b35;
-            font-family: monospace;
-        }
-        .label {
-            color: #808080;
-            margin-bottom: 10px;
-        }
-    </style>
+    <link rel="icon" type="image/png" href="logo-icon.png">
+    <link rel="apple-touch-icon" href="logo-icon.png">
+    <link rel="stylesheet" href="styles.css">
+    <!-- Canvas-gauges: Try local first, fallback to CDN -->
+    <script>
+        // Flag to track if gauge library is loaded
+        window.gaugeLibraryLoaded = false;
+        
+        // Try to load local gauge library first
+        var script = document.createElement('script');
+        script.src = 'gauge.min.js';
+        
+        script.onload = function() {
+            console.log('✓ Gauge library loaded from local file');
+            window.gaugeLibraryLoaded = true;
+            window.dispatchEvent(new Event('gaugeLibraryReady'));
+        };
+        
+        script.onerror = function() {
+            // If local fails, load from CDN (only when online)
+            console.log('⚠ Local gauge.min.js not found, trying CDN...');
+            var cdnScript = document.createElement('script');
+            cdnScript.src = 'https://cdn.rawgit.com/Mikhus/canvas-gauges/gh-pages/download/2.1.7/all/gauge.min.js';
+            
+            cdnScript.onload = function() {
+                console.log('✓ Gauge library loaded from CDN');
+                window.gaugeLibraryLoaded = true;
+                window.dispatchEvent(new Event('gaugeLibraryReady'));
+            };
+            
+            cdnScript.onerror = function() {
+                console.error('❌ Failed to load gauge library from both local and CDN!');
+                console.error('Please download gauge.min.js - see OFFLINE_SETUP.md');
+            };
+            
+            document.head.appendChild(cdnScript);
+        };
+        
+        document.head.appendChild(script);
+    </script>
 </head>
 <body>
     <div class="container">
-        <h1>🐎 OpenPonyLogger</h1>
-        
-        <div class="data-box">
-            <h2>G-Force Monitor</h2>
-            <div class="label">Lateral (X):</div>
-            <div class="value" id="gx">--</div>
-            
-            <div class="label">Longitudinal (Y):</div>
-            <div class="value" id="gy">--</div>
-            
-            <div class="label">Vertical (Z):</div>
-            <div class="value" id="gz">--</div>
-            
-            <div class="label">Total:</div>
-            <div class="value" id="total">--</div>
-        </div>
-        
-        <div class="data-box">
-            <h2>System Status</h2>
-            <div class="label">Version:</div>
-            <div id="version">--</div>
-            <div class="label">Uptime:</div>
-            <div class="value" id="uptime">--</div>
-            
-            <div class="label">Last Update:</div>
-            <div id="lastUpdate">--</div>
-        </div>
+        <!-- Header -->
+        <header class="header">
+            <h1>🐎 OpenPonyLogger</h1>
+            <div class="status-indicator">
+                <span class="status-dot" id="connectionStatus"></span>
+                <span id="connectionText">Connecting...</span>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="nav-tabs">
+            <button class="tab-button active" data-tab="about">About</button>
+            <button class="tab-button" data-tab="status">Status</button>
+            <button class="tab-button" data-tab="gauges">Gauges</button>
+            <button class="tab-button" data-tab="gforce">G-Force</button>
+            <button class="tab-button" data-tab="gps">GPS</button>
+            <button class="tab-button" data-tab="sessions">Sessions</button>
+            <button class="tab-button" data-tab="fuellog">Fuel Log</button>
+            <button class="tab-button" data-tab="config">Config</button>
+        </nav>
+
+        <!-- Tab Content -->
+        <main class="content">
+            <!-- About Tab -->
+            <div class="tab-content active" id="about">
+                <div class="info-card">
+                    <div class="logo-container">
+                        <img src="logo-full.png" alt="OpenPonyLogger Logo" class="logo-full">
+                    </div>
+                    <h2>OpenPonyLogger</h2>
+                    <p class="version">Version 1.3.0</p>
+                    <div class="about-section">
+                        <h3>Open-Source Automotive Telemetry System</h3>
+                        <p>OpenPonyLogger is a comprehensive data logging solution for your Mustang GT, 
+                        designed to record and analyze performance data in real-time.</p>
+                        
+                        <h3>Features</h3>
+                        <ul>
+                            <li>Real-time OBD-II data monitoring</li>
+                            <li>GPS tracking with satellite visualization</li>
+                            <li>3-axis accelerometer for G-force measurement</li>
+                            <li>Session recording and playback</li>
+                            <li>Fuel economy tracking and PID testing</li>
+                            <li>Low-cost alternative ($33 vs $400-800 commercial units)</li>
+                        </ul>
+
+                        <h3>Hardware</h3>
+                        <ul>
+                            <li>Raspberry Pi Pico 2W</li>
+                            <li>GPS Module (UART)</li>
+                            <li>MPU6050 Accelerometer (I2C)</li>
+                            <li>ELM327 OBD-II Interface</li>
+                        </ul>
+
+                        <h3>Project Info</h3>
+                        <p><strong>Vehicle:</strong> 2014 Ford Mustang GT "Ciara"</p>
+                        <p><strong>Developer:</strong> John Orthoefer</p>
+                        <p><strong>License:</strong> Open Source</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Status Tab -->
+            <div class="tab-content" id="status">
+                <div class="status-grid">
+                    <div class="status-card">
+                        <h3>System Status</h3>
+                        <div class="status-row">
+                            <span>CPU Temperature:</span>
+                            <span id="cpuTemp">--°C</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Memory Used:</span>
+                            <span id="memUsed">--</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Uptime:</span>
+                            <span id="uptime">--</span>
+                        </div>
+                        <div class="status-row">
+                            <span>WiFi Signal:</span>
+                            <span id="wifiSignal">--</span>
+                        </div>
+                    </div>
+
+                    <div class="status-card">
+                        <h3>OBD-II Connection</h3>
+                        <div class="status-row">
+                            <span>Status:</span>
+                            <span id="obdStatus" class="status-badge">Disconnected</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Protocol:</span>
+                            <span id="obdProtocol">--</span>
+                        </div>
+                        <div class="status-row">
+                            <span>VIN:</span>
+                            <span id="obdVin">--</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Data Rate:</span>
+                            <span id="obdDataRate">--</span>
+                        </div>
+                    </div>
+
+                    <div class="status-card">
+                        <h3>GPS Module</h3>
+                        <div class="status-row">
+                            <span>Status:</span>
+                            <span id="gpsStatus" class="status-badge">No Fix</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Satellites:</span>
+                            <span id="gpsSats">0</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Fix Quality:</span>
+                            <span id="gpsFixQuality">--</span>
+                        </div>
+                        <div class="status-row">
+                            <span>HDOP:</span>
+                            <span id="gpsHdop">--</span>
+                        </div>
+                    </div>
+
+                    <div class="status-card">
+                        <h3>Accelerometer</h3>
+                        <div class="status-row">
+                            <span>Status:</span>
+                            <span id="accelStatus" class="status-badge">OK</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Sample Rate:</span>
+                            <span id="accelRate">100 Hz</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Range:</span>
+                            <span id="accelRange">±2g</span>
+                        </div>
+                        <div class="status-row">
+                            <span>Calibration:</span>
+                            <span id="accelCal">Calibrated</span>
+                        </div>
+                    </div>
+
+                    <div class="status-card full-width">
+                        <h3>Storage</h3>
+                        <div class="storage-info">
+                            <div class="storage-bar">
+                                <div class="storage-used" id="storageBar" style="width: 35%"></div>
+                            </div>
+                            <div class="storage-text">
+                                <span id="storageUsed">350 MB</span> / <span id="storageTotal">1 GB</span>
+                            </div>
+                        </div>
+                        <div class="status-row">
+                            <span>Sessions Stored:</span>
+                            <span id="sessionsStored">12</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Gauges Tab -->
+            <div class="tab-content" id="gauges">
+                <div class="gauges-grid">
+                    <div class="gauge-container">
+                        <canvas id="speedGauge"></canvas>
+                        <p class="gauge-label">Speed (MPH)</p>
+                    </div>
+                    <div class="gauge-container">
+                        <canvas id="rpmGauge"></canvas>
+                        <p class="gauge-label">Engine RPM</p>
+                    </div>
+                    <div class="gauge-container">
+                        <canvas id="tempGauge"></canvas>
+                        <p class="gauge-label">Coolant Temp (°F)</p>
+                    </div>
+                    <div class="gauge-container">
+                        <canvas id="oilPressureGauge"></canvas>
+                        <p class="gauge-label">Oil Pressure (PSI)</p>
+                    </div>
+                    <div class="gauge-container">
+                        <canvas id="boostGauge"></canvas>
+                        <p class="gauge-label">Boost (PSI)</p>
+                    </div>
+                    <div class="gauge-container">
+                        <canvas id="throttleGauge"></canvas>
+                        <p class="gauge-label">Throttle Position (%)</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- G-Force Tab -->
+            <div class="tab-content" id="gforce">
+                <div class="gforce-layout">
+                    <div class="gforce-display">
+                        <canvas id="gforceCanvas"></canvas>
+                    </div>
+                    <div class="gforce-stats">
+                        <div class="stat-card">
+                            <h3>Current G-Forces</h3>
+                            <div class="gforce-reading">
+                                <span class="gforce-label">Lateral:</span>
+                                <span class="gforce-value" id="gforceLat">0.00g</span>
+                            </div>
+                            <div class="gforce-reading">
+                                <span class="gforce-label">Longitudinal:</span>
+                                <span class="gforce-value" id="gforceLong">0.00g</span>
+                            </div>
+                            <div class="gforce-reading">
+                                <span class="gforce-label">Vertical:</span>
+                                <span class="gforce-value" id="gforceVert">1.00g</span>
+                            </div>
+                        </div>
+                        <div class="stat-card">
+                            <h3>Peak G-Forces (Session)</h3>
+                            <div class="gforce-reading">
+                                <span class="gforce-label">Max Acceleration:</span>
+                                <span class="gforce-value" id="maxAccel">0.00g</span>
+                            </div>
+                            <div class="gforce-reading">
+                                <span class="gforce-label">Max Braking:</span>
+                                <span class="gforce-value" id="maxBrake">0.00g</span>
+                            </div>
+                            <div class="gforce-reading">
+                                <span class="gforce-label">Max Cornering:</span>
+                                <span class="gforce-value" id="maxCorner">0.00g</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- GPS Tab -->
+            <div class="tab-content" id="gps">
+                <div class="gps-layout">
+                    <div class="gps-map">
+                        <canvas id="gpsCanvas"></canvas>
+                    </div>
+                    <div class="gps-info">
+                        <div class="info-card">
+                            <h3>Position</h3>
+                            <div class="gps-data">
+                                <span>Latitude:</span>
+                                <span id="gpsLat">--</span>
+                            </div>
+                            <div class="gps-data">
+                                <span>Longitude:</span>
+                                <span id="gpsLon">--</span>
+                            </div>
+                            <div class="gps-data">
+                                <span>Altitude:</span>
+                                <span id="gpsAlt">--</span>
+                            </div>
+                            <div class="gps-data">
+                                <span>Heading:</span>
+                                <span id="gpsHeading">--</span>
+                            </div>
+                        </div>
+                        <div class="info-card">
+                            <h3>Speed</h3>
+                            <div class="gps-data">
+                                <span>Ground Speed:</span>
+                                <span id="gpsSpeed">-- MPH</span>
+                            </div>
+                            <div class="gps-data">
+                                <span>Max Speed:</span>
+                                <span id="gpsMaxSpeed">-- MPH</span>
+                            </div>
+                        </div>
+                        <div class="info-card">
+                            <h3>Satellite Info</h3>
+                            <div id="satList" class="satellite-list">
+                                <!-- Dynamically populated -->
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sessions Tab -->
+            <div class="tab-content" id="sessions">
+                <div class="sessions-header">
+                    <h2>Recorded Sessions</h2>
+                    <div class="session-controls">
+                        <button class="btn btn-primary" id="startSession">
+                            <span id="sessionButtonText">Start Recording</span>
+                        </button>
+                        <button class="btn btn-secondary" id="exportSessions">Export All</button>
+                    </div>
+                </div>
+                <div class="sessions-list" id="sessionsList">
+                    <!-- Dynamically populated with session cards -->
+                </div>
+            </div>
+
+            <!-- Fuel Log Tab -->
+            <div class="tab-content" id="fuellog">
+                <div class="sessions-header">
+                    <h2>Fuel Log</h2>
+                    <div class="session-controls">
+                        <button class="btn btn-primary" id="addFuelEntry">Add Fill-Up</button>
+                        <button class="btn btn-secondary" id="exportFuelLog">Export Log</button>
+                    </div>
+                </div>
+
+                <!-- Add Fuel Entry Form (Initially Hidden) -->
+                <div class="info-card" id="fuelEntryForm" style="display: none; margin-bottom: 1rem;">
+                    <h3>New Fill-Up Entry</h3>
+                    <div class="config-sections">
+                        <div class="config-card">
+                            <div class="config-row">
+                                <label for="fuelDate">Date:</label>
+                                <input type="date" id="fuelDate">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelTime">Time:</label>
+                                <input type="time" id="fuelTime">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelOdometer">Odometer (miles):</label>
+                                <input type="number" id="fuelOdometer" step="0.1" placeholder="e.g., 45231.5">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelGallons">Gallons Added:</label>
+                                <input type="number" id="fuelGallons" step="0.01" placeholder="e.g., 15.23">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelPricePerGallon">Price per Gallon:</label>
+                                <input type="number" id="fuelPricePerGallon" step="0.01" placeholder="e.g., 3.45">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelLocation">Location (optional):</label>
+                                <input type="text" id="fuelLocation" placeholder="e.g., Shell on Route 9">
+                            </div>
+                            <div class="config-row">
+                                <label for="fuelNotes">Notes (optional):</label>
+                                <textarea id="fuelNotes" rows="2" placeholder="Full tank, highway driving, etc."></textarea>
+                            </div>
+                            <div class="config-row" style="gap: 0.5rem;">
+                                <button class="btn btn-primary" id="saveFuelEntry">Save Entry</button>
+                                <button class="btn btn-secondary" id="cancelFuelEntry">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fuel Statistics -->
+                <div class="info-card" style="margin-bottom: 1rem;">
+                    <h3>Fuel Economy Statistics</h3>
+                    <div class="status-grid">
+                        <div class="status-card">
+                            <h4>Last Fill-Up</h4>
+                            <div class="status-row">
+                                <span>MPG:</span>
+                                <span id="lastMpg">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Cost/Mile:</span>
+                                <span id="lastCostPerMile">--</span>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <h4>Last 3 Fills Average</h4>
+                            <div class="status-row">
+                                <span>Avg MPG:</span>
+                                <span id="avg3Mpg">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Avg Cost/Mile:</span>
+                                <span id="avg3CostPerMile">--</span>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <h4>Overall Average</h4>
+                            <div class="status-row">
+                                <span>Avg MPG:</span>
+                                <span id="overallMpg">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Total Miles:</span>
+                                <span id="totalMiles">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Total Gallons:</span>
+                                <span id="totalGallons">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Total Cost:</span>
+                                <span id="totalCost">--</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Fuel Log List -->
+                <div class="info-card">
+                    <h3>Fill-Up History</h3>
+                    <div id="fuelLogList" class="sessions-list">
+                        <!-- Dynamically populated with fuel entries -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Config Tab -->
+            <div class="tab-content" id="config">
+                <div class="config-sections">
+                    <div class="config-card">
+                        <h3>General Settings</h3>
+                        <div class="config-row">
+                            <label for="deviceName">Device Name:</label>
+                            <input type="text" id="deviceName" value="OpenPonyLogger-01">
+                        </div>
+                        <div class="config-row">
+                            <label for="timezone">Timezone:</label>
+                            <select id="timezone">
+                                <option value="America/New_York">Eastern Time</option>
+                                <option value="America/Chicago">Central Time</option>
+                                <option value="America/Denver">Mountain Time</option>
+                                <option value="America/Los_Angeles">Pacific Time</option>
+                            </select>
+                        </div>
+                        <div class="config-row">
+                            <label for="units">Units:</label>
+                            <select id="units">
+                                <option value="imperial">Imperial (MPH, °F)</option>
+                                <option value="metric">Metric (KPH, °C)</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>Data Logging</h3>
+                        <div class="config-row">
+                            <label for="sampleRate">Sample Rate:</label>
+                            <select id="sampleRate">
+                                <option value="10">10 Hz</option>
+                                <option value="20">20 Hz</option>
+                                <option value="50">50 Hz</option>
+                                <option value="100" selected>100 Hz</option>
+                            </select>
+                        </div>
+                        <div class="config-row checkbox-row">
+                            <input type="checkbox" id="autoRecord" checked>
+                            <label for="autoRecord">Auto-start recording when moving</label>
+                        </div>
+                        <div class="config-row checkbox-row">
+                            <input type="checkbox" id="recordGPS" checked>
+                            <label for="recordGPS">Record GPS data</label>
+                        </div>
+                        <div class="config-row checkbox-row">
+                            <input type="checkbox" id="recordAccel" checked>
+                            <label for="recordAccel">Record accelerometer data</label>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>WiFi Configuration</h3>
+                        <div class="config-row">
+                            <label for="wifiMode">Mode:</label>
+                            <select id="wifiMode">
+                                <option value="ap">Access Point</option>
+                                <option value="client">Client</option>
+                            </select>
+                        </div>
+                        <div class="config-row">
+                            <label for="wifiSSID">SSID:</label>
+                            <input type="text" id="wifiSSID" value="OpenPonyLogger">
+                        </div>
+                        <div class="config-row">
+                            <label for="wifiPassword">Password:</label>
+                            <input type="password" id="wifiPassword" placeholder="••••••••">
+                        </div>
+
+                        <!-- Client Mode Network Settings -->
+                        <div id="clientNetworkSettings" style="display: none; margin-top: 1rem; padding-top: 1rem; border-top: 1px solid rgba(255, 255, 255, 0.1);">
+                            <h4 style="margin: 0 0 1rem 0; color: var(--text);">Network Settings (Client Mode)</h4>
+                            
+                            <div class="config-row checkbox-row">
+                                <input type="checkbox" id="useDHCP" checked>
+                                <label for="useDHCP">Use DHCP (Automatic IP)</label>
+                            </div>
+
+                            <!-- Static IP Configuration (hidden when DHCP enabled) -->
+                            <div id="staticIPSettings" style="display: none; margin-top: 1rem;">
+                                <div class="config-row">
+                                    <label for="staticIP">IP Address:</label>
+                                    <input type="text" id="staticIP" placeholder="192.168.1.100">
+                                </div>
+                                <div class="config-row">
+                                    <label for="subnetMask">Subnet Mask (CIDR):</label>
+                                    <input type="text" id="subnetMask" placeholder="24 (or 255.255.255.0)">
+                                </div>
+                                <div class="config-row">
+                                    <label for="gateway">Gateway:</label>
+                                    <input type="text" id="gateway" placeholder="192.168.1.1">
+                                </div>
+                                <div class="config-row">
+                                    <label for="dnsServer">DNS Server:</label>
+                                    <input type="text" id="dnsServer" placeholder="8.8.8.8">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>Bluetooth Configuration</h3>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                            Scan for nearby Bluetooth devices to pair with OpenPonyLogger.
+                        </p>
+                        
+                        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                            <button class="btn btn-primary" id="scanBluetoothButton">
+                                <span id="btScanButtonText">Scan for Devices</span>
+                            </button>
+                            <button class="btn btn-secondary" id="refreshBluetoothButton" style="display: none;">Refresh</button>
+                        </div>
+
+                        <!-- Bluetooth Device List -->
+                        <div id="bluetoothDeviceList" style="display: none;">
+                            <h4 style="margin: 0 0 0.5rem 0;">Available Devices:</h4>
+                            <div id="btDeviceDropdown" class="config-row">
+                                <label for="btDeviceSelect">Select Device:</label>
+                                <select id="btDeviceSelect">
+                                    <option value="">-- No devices found --</option>
+                                </select>
+                            </div>
+                            <div class="config-row">
+                                <button class="btn btn-primary" id="pairBluetoothButton" disabled>Pair Device</button>
+                                <button class="btn btn-secondary" id="unpairBluetoothButton" style="display: none;">Unpair</button>
+                            </div>
+                        </div>
+
+                        <!-- Paired Device Status -->
+                        <div id="pairedDeviceStatus" style="margin-top: 1rem; padding: 0.75rem; background: var(--surface); border-radius: 4px; display: none;">
+                            <div class="status-row">
+                                <span>Paired Device:</span>
+                                <span id="pairedDeviceName" style="color: var(--primary); font-weight: bold;">--</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Connection Status:</span>
+                                <span id="btConnectionStatus" class="status-badge">Disconnected</span>
+                            </div>
+                            <div class="status-row">
+                                <span>Signal Strength:</span>
+                                <span id="btSignalStrength">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>OBD-II Settings</h3>
+                        <div class="config-row">
+                            <label for="obdProtocol">Protocol:</label>
+                            <select id="obdProtocol">
+                                <option value="auto" selected>Auto-detect</option>
+                                <option value="ISO15765-4_CAN">CAN (ISO 15765-4)</option>
+                                <option value="ISO9141-2">ISO 9141-2</option>
+                                <option value="ISO14230-4">ISO 14230-4 (KWP)</option>
+                            </select>
+                        </div>
+                        <div class="config-row">
+                            <label for="obdTimeout">Timeout (ms):</label>
+                            <input type="number" id="obdTimeout" value="200" min="100" max="1000" step="50">
+                        </div>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>Additional PIDs</h3>
+                        <p style="color: var(--text-secondary); font-size: 0.9rem; margin-bottom: 1rem;">
+                            Monitor custom OBD-II PIDs beyond standard parameters. Enter PIDs in hexadecimal format (e.g., 010C for RPM).
+                        </p>
+                        
+                        <!-- Test PIDs Section -->
+                        <div style="margin-bottom: 1.5rem; padding: 1rem; background: var(--surface); border-radius: 4px;">
+                            <h4 style="margin: 0 0 0.5rem 0;">PID Testing</h4>
+                            <p style="color: var(--text-secondary); font-size: 0.85rem; margin-bottom: 1rem;">
+                                Test all PIDs (built-in + custom) to see which ones your vehicle supports. Results will show enabled/disabled status.
+                            </p>
+                            <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+                                <button class="btn btn-primary" id="testAllPidsButton">Test All PIDs</button>
+                                <button class="btn btn-secondary" id="testCustomPidsButton">Test Custom PIDs Only</button>
+                            </div>
+                            
+                            <!-- Test Results -->
+                            <div id="pidTestResults" style="display: none;">
+                                <h4 style="margin: 0.5rem 0;">Test Results:</h4>
+                                <div id="pidTestProgress" style="margin-bottom: 0.5rem; color: var(--primary);">
+                                    <!-- Progress shown here -->
+                                </div>
+                                <div id="pidTestOutput" style="background: var(--background); padding: 0.75rem; border-radius: 4px; font-family: 'Courier New', monospace; font-size: 0.85rem; max-height: 300px; overflow-y: auto;">
+                                    <!-- Test results shown here -->
+                                </div>
+                                <p id="pidTestSummary" style="margin-top: 0.5rem; font-weight: bold; color: var(--primary);">
+                                    <!-- Summary shown here -->
+                                </p>
+                            </div>
+                        </div>
+                        
+                        <!-- Custom PIDs List -->
+                        <div id="additionalPidsList" class="additional-pids-list">
+                            <!-- Dynamically populated PID entries -->
+                        </div>
+                        <button class="btn btn-secondary" id="addPidButton" style="margin-top: 1rem;">+ Add PID</button>
+                    </div>
+
+                    <div class="config-card">
+                        <h3>Display Settings</h3>
+                        <div class="config-row">
+                            <label for="startupTab">Default Startup Tab:</label>
+                            <select id="startupTab">
+                                <option value="about" selected>About</option>
+                                <option value="status">Status</option>
+                                <option value="gauges">Gauges</option>
+                                <option value="gforce">G-Force</option>
+                                <option value="gps">GPS</option>
+                                <option value="sessions">Sessions</option>
+                                <option value="fuellog">Fuel Log</option>
+                                <option value="config">Config</option>
+                            </select>
+                        </div>
+                        <div class="config-row checkbox-row">
+                            <input type="checkbox" id="darkMode" checked>
+                            <label for="darkMode">Dark Mode</label>
+                        </div>
+                        <div class="config-row">
+                            <label for="brightness">Screen Brightness:</label>
+                            <input type="range" id="brightness" min="10" max="100" value="80">
+                            <span id="brightnessValue">80%</span>
+                        </div>
+                    </div>
+
+                    <div class="config-actions">
+                        <button class="btn btn-primary" id="saveConfig">Save Configuration</button>
+                        <button class="btn btn-secondary" id="resetConfig">Reset to Defaults</button>
+                        <button class="btn btn-danger" id="factoryReset">Factory Reset</button>
+                    </div>
+                </div>
+            </div>
+        </main>
     </div>
-    
-    <script>
-        function updateData() {
-            fetch('/api/live')
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById('gx').textContent = data.accel.gx.toFixed(2) + 'g';
-                    document.getElementById('gy').textContent = data.accel.gy.toFixed(2) + 'g';
-                    document.getElementById('gz').textContent = data.accel.gz.toFixed(2) + 'g';
-                    document.getElementById('total').textContent = data.accel.g_total.toFixed(2) + 'g';
-                    document.getElementById('uptime').textContent = data.system.uptime + 's';
-                    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
-                })
-                .catch(err => console.error('Error:', err));
-                fetch('/api/status')
-                    .then(response => response.json())
-                    .then(data => {
-                        document.getElementById('version').textContent = data.version;
-                        document.getElementById('gitHash').textContent = data.git_hash;
-                    })
-                    .catch(err => console.error('Status error:', err));
-        }
-        
-        // Update every 250ms
-        setInterval(updateData, 250);
-        updateData(); // Initial load
-    </script>
+
+    <script src="app.js"></script>
 </body>
 </html>
