@@ -12,14 +12,15 @@
 PYTHON := python3
 
 # Deployment script
-DEPLOY_SCRIPT := deploy_to_pico.py
+DEPLOY_SCRIPT := tools/deploy_to_pico.py
 
+# Auto-detect CIRCUITPY drive
 # Auto-detect CIRCUITPY drive
 DRIVE ?= $(shell $(PYTHON) -c "import platform; \
 	from pathlib import Path; \
 	system = platform.system(); \
 	paths = ['/Volumes/CIRCUITPY'] if system == 'Darwin' else \
-	        ['/media/CIRCUITPY', '/media/$$USER/CIRCUITPY'] if system == 'Linux' else \
+	        ['/media/CIRCUITPY', '/media/$$USER/CIRCUITPY', '/run/media/$$USER/CIRCUITPY'] if system == 'Linux' else \
 	        [f'{chr(d)}:/CIRCUITPY' for d in range(68, 91)]; \
 	print(next((str(p) for p in paths if Path(p).exists()), ''))")
 
@@ -42,11 +43,6 @@ venv:
 	$(PIP) install circup mpy-cross pytest black
 	@echo "✓ Virtual environment ready!"
 	@echo "Activate with: source venv/bin/activate"
-
-.PHONY: install-deps
-install-deps: venv
-	@echo "Installing development dependencies..."
-	$(PIP) install -r tools/requirements.txt
 
 .PHONY: help
 help:
@@ -144,7 +140,7 @@ install-deps: check
 compress:
 	@echo "Compressing web assets..."
 	@mkdir -p web_compressed
-	$(PYTHON) prepare_web_assets_cp.py web/ web_compressed/
+	$(PYTHON) tools/prepare_web_assets_cp.py web/ web_compressed/
 
 .PHONY: stats
 stats: compress
