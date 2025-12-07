@@ -244,6 +244,7 @@ def deploy_python_files(drive_path, backup=True, use_mpy=False):
         # Configuration (if exists)
         "circuitpython/settings.toml": "settings.toml",
     }
+    NO_COMPILE_FILES = ["code.py", "settings.toml"]
     
     # Check if mpy-cross is available
     if use_mpy:
@@ -276,9 +277,11 @@ def deploy_python_files(drive_path, backup=True, use_mpy=False):
                 print_error(f"  Failed to copy {src}: {e}")
                 success = False
             continue
+        # Check if this file should be compiled
+        should_compile = use_mpy and dst not in NO_COMPILE_FILES
         
         # Compile to .mpy if requested
-        if use_mpy:
+        if should_compile:
             mpy_file = compile_to_mpy(src_path, mpy_temp_dir)
             if mpy_file:
                 # Deploy .mpy file
