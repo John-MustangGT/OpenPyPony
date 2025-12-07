@@ -14,6 +14,8 @@ import storage
 import sdcardio
 import time
 import os
+import wifi
+import socketpool
 from wifi_server import WiFiAPTask, WebServerTask
 from scheduler import Task, Scheduler
 

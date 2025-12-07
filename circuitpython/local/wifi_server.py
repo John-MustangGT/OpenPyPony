@@ -1,41 +1,55 @@
 """
-web_server_gz.py - CircuitPython web server with gzip compression support
-
-This module extends the basic web server to serve pre-compressed .gz files
-with proper Content-Encoding headers for maximum flash savings.
-
-Usage in code.py:
-    from web_server_gz import WebServerGzip
-    
-    server = WebServerGzip(pool, debug=True)
-    server.start(port=80)
-    
-    while True:
-        server.poll()
-        time.sleep(0.01)
+wifi_server.py - WiFi AP and Web Server for OpenPonyLogger
+Combines WiFi access point setup with gzip-compressed web serving
 """
 
+import wifi
+import socketpool
 import time
 import os
 
-class WebServerGzip:
-    """Web server that serves pre-compressed gzip files"""
+class WiFiAPTask:
+    """WiFi Access Point manager"""
     
-    def __init__(self, socket_pool, web_root="/web", debug=False):
-        """
-        Initialize web server with gzip support
+    def __init__(self, ssid="OpenPonyLogger", password="mustanggt"):
+        self.ssid = ssid
+        self.password = password
+        self.ap_active = False
+        self.ip_address = None
         
-        Args:
-            socket_pool: socketpool from wifi
-            web_root: Directory containing web files (default: /web)
-            debug: Enable debug logging
-        """
-        self.pool = socket_pool
+    def start(self):
+        """Start WiFi Access Point"""
+        try:
+            wifi.radio.start_ap(ssid=self.ssid, password=self.password)
+            self.ap_active = True
+            self.ip_address = str(wifi.radio.ipv4_address_ap)
+            print(f"[WiFi] AP Started: {self.ssid}")
+            print(f"[WiFi] IP: {self.ip_address}")
+            return True
+        except Exception as e:
+            print(f"[WiFi] Failed to start AP: {e}")
+            return False
+    
+    def stop(self):
+        """Stop WiFi Access Point"""
+        if self.ap_active:
+            wifi.radio.stop_ap()
+            self.ap_active = False
+            print("[WiFi] AP Stopped")
+
+
+class WebServerTask:
+    """Web server with gzip compression support"""
+    
+    def __init__(self, data_buffer, wifi_ap, web_root="/web", debug=True):
+        self.data_buffer = data_buffer
+        self.wifi_ap = wifi_ap
         self.web_root = web_root
         self.debug = debug
         self.server_socket = None
+        self.request_count = 0
         
-        # Load asset map if available
+        # Load asset map
         try:
             import sys
             sys.path.append(web_root)
@@ -46,27 +60,28 @@ class WebServerGzip:
         except ImportError:
             self.assets = None
             if self.debug:
-                print("[Web] No asset map found, using file discovery")
+                print("[Web] No asset map found")
     
-    def start(self, port=80, max_connections=1):
-        """Start the web server"""
-        import socketpool
-        
-        self.server_socket = self.pool.socket(
-            self.pool.AF_INET, 
-            self.pool.SOCK_STREAM
-        )
-        self.server_socket.setsockopt(
-            self.pool.SOL_SOCKET,
-            self.pool.SO_REUSEADDR,
-            1
-        )
-        self.server_socket.bind(('0.0.0.0', port))
-        self.server_socket.listen(max_connections)
-        self.server_socket.setblocking(False)
-        
-        if self.debug:
-            print(f"[Web] Server started on port {port}")
+    def start(self, port=80):
+        """Start web server"""
+        try:
+            pool = socketpool.SocketPool(wifi.radio)
+            self.server_socket = pool.socket(pool.AF_INET, pool.SOCK_STREAM)
+            self.server_socket.setsockopt(
+                pool.SOL_SOCKET,
+                pool.SO_REUSEADDR,
+                1
+            )
+            self.server_socket.bind(('0.0.0.0', port))
+            self.server_socket.listen(1)
+            self.server_socket.setblocking(False)
+            
+            if self.debug:
+                print(f"[Web] Server started on port {port}")
+            return True
+        except Exception as e:
+            print(f"[Web] Failed to start: {e}")
+            return False
     
     def poll(self):
         """Poll for incoming connections (non-blocking)"""
@@ -75,14 +90,14 @@ class WebServerGzip:
             if self.debug:
                 print(f"[Web] Connection from {addr}")
             self._handle_client(client)
+            self.request_count += 1
         except OSError:
-            # No connection available (non-blocking)
-            pass
+            pass  # No connection available
     
     def _handle_client(self, client):
         """Handle a client connection"""
         try:
-            client.settimeout(2.0)  # 2 second timeout
+            client.settimeout(2.0)
             
             # Read request
             request = b""
@@ -107,9 +122,12 @@ class WebServerGzip:
             if self.debug:
                 print(f"[Web] GET {path} (gzip: {accepts_gzip})")
             
-            # Serve file
-            self._serve_file(client, path, accepts_gzip)
-            
+            # Serve file or API
+            if path.startswith('/api/'):
+                self._serve_api(client, path)
+            else:
+                self._serve_file(client, path, accepts_gzip)
+                
         except Exception as e:
             if self.debug:
                 print(f"[Web] Error: {e}")
@@ -120,25 +138,17 @@ class WebServerGzip:
                 pass
     
     def _parse_request(self, request):
-        """
-        Parse HTTP request
-        
-        Returns:
-            (path, accepts_gzip)
-        """
+        """Parse HTTP request"""
         lines = request.split('\r\n')
         
-        # Parse request line
         path = "/"
         if lines and lines[0].startswith('GET '):
             parts = lines[0].split(' ')
             if len(parts) >= 2:
                 path = parts[1]
-                # Remove query string
                 if '?' in path:
                     path = path[:path.index('?')]
         
-        # Check for gzip support
         accepts_gzip = False
         for line in lines[1:]:
             if line.lower().startswith('accept-encoding:'):
@@ -157,7 +167,6 @@ class WebServerGzip:
             gzippath = f"{self.web_root}/{asset['gzip']}"
             mime_type = asset['mime']
         else:
-            # Fallback: try to serve file directly
             if path == "/":
                 filepath = f"{self.web_root}/index.html"
                 mime_type = "text/html"
@@ -166,13 +175,50 @@ class WebServerGzip:
                 mime_type = self._guess_mime_type(path)
             gzippath = filepath + ".gz"
         
-        # Try compressed version first if client accepts gzip
+        # Try compressed version first
         if accepts_gzip and self._file_exists(gzippath):
             self._send_file(client, gzippath, mime_type, compressed=True)
         elif self._file_exists(filepath):
             self._send_file(client, filepath, mime_type, compressed=False)
         else:
             self._send_404(client)
+    
+    def _serve_api(self, client, path):
+        """Serve API endpoints"""
+        import json
+        
+        response_data = {}
+        
+        if path == '/api/live':
+            accel = self.data_buffer.get('accel', {})
+            response_data = {
+                'accel': {
+                    'gx': accel.get('gx', 0),
+                    'gy': accel.get('gy', 0),
+                    'gz': accel.get('gz', 0),
+                    'g_total': accel.get('g_total', 0)
+                },
+                'system': {
+                    'uptime': int(time.monotonic())
+                }
+            }
+        elif path == '/api/status':
+            response_data = {
+                'version': 'v1.0.0',
+                'git_hash': 'dev',
+                'uptime': int(time.monotonic())
+            }
+        
+        json_str = json.dumps(response_data)
+        response = (
+            "HTTP/1.1 200 OK\r\n"
+            "Content-Type: application/json\r\n"
+            f"Content-Length: {len(json_str)}\r\n"
+            "Connection: close\r\n"
+            "\r\n"
+            + json_str
+        )
+        client.send(response.encode('utf-8'))
     
     def _file_exists(self, path):
         """Check if file exists"""
@@ -185,10 +231,8 @@ class WebServerGzip:
     def _send_file(self, client, filepath, mime_type, compressed=False):
         """Send file to client"""
         try:
-            # Get file size
             file_size = os.stat(filepath)[6]
             
-            # Send headers
             headers = (
                 "HTTP/1.1 200 OK\r\n"
                 f"Content-Type: {mime_type}\r\n"
@@ -206,10 +250,9 @@ class WebServerGzip:
             
             client.send(headers.encode('utf-8'))
             
-            # Send file in chunks
             with open(filepath, 'rb') as f:
                 while True:
-                    chunk = f.read(512)  # 512 byte chunks
+                    chunk = f.read(512)
                     if not chunk:
                         break
                     client.send(chunk)
@@ -217,7 +260,7 @@ class WebServerGzip:
             if self.debug:
                 encoding = "gzip" if compressed else "plain"
                 print(f"[Web] Sent {filepath} ({file_size} bytes, {encoding})")
-            
+                
         except Exception as e:
             if self.debug:
                 print(f"[Web] Error sending file: {e}")
@@ -234,9 +277,6 @@ class WebServerGzip:
             "404 Not Found"
         )
         client.send(response.encode('utf-8'))
-        
-        if self.debug:
-            print("[Web] Sent 404")
     
     def _send_500(self, client):
         """Send 500 Internal Server Error"""
@@ -252,9 +292,6 @@ class WebServerGzip:
             client.send(response.encode('utf-8'))
         except:
             pass
-        
-        if self.debug:
-            print("[Web] Sent 500")
     
     def _guess_mime_type(self, path):
         """Guess MIME type from file extension"""
@@ -266,12 +303,6 @@ class WebServerGzip:
             return 'application/javascript'
         elif path.endswith('.json'):
             return 'application/json'
-        elif path.endswith('.png'):
-            return 'image/png'
-        elif path.endswith('.jpg') or path.endswith('.jpeg'):
-            return 'image/jpeg'
-        elif path.endswith('.svg'):
-            return 'image/svg+xml'
         else:
             return 'application/octet-stream'
     
@@ -282,27 +313,3 @@ class WebServerGzip:
             self.server_socket = None
             if self.debug:
                 print("[Web] Server stopped")
-
-
-# Example usage in code.py:
-"""
-import wifi
-import socketpool
-from web_server_gz import WebServerGzip
-
-# Connect to WiFi or start AP
-# ... (your existing WiFi setup)
-
-# Create web server
-pool = socketpool.SocketPool(wifi.radio)
-server = WebServerGzip(pool, web_root="/web", debug=True)
-server.start(port=80)
-
-print("Web server running!")
-
-# Main loop
-while True:
-    server.poll()
-    # ... (your other tasks)
-    time.sleep(0.01)
-"""

@@ -358,6 +358,7 @@ def clean_deployment(drive_path):
     # Files to remove
     files_to_clean = [
         "code.py.backup",
+        "wifi_server_gz.py.backup",
         "web_server_gz.py.backup",
     ]
     
@@ -398,7 +399,8 @@ def validate_deployment(drive_path, check_mpy=False):
     
     required_files = [
         f"code{py_ext}",
-        f"web_server{py_ext}",
+        f"wifi_server{py_ext}",
+#        f"web_server{py_ext}",
         "web/asset_map.py",  # Always .py
         "web/index.html.gz",
         "web/styles.css.gz",
@@ -445,12 +447,19 @@ def install_circuitpython_libs(drive_path):
     print_info("Installing/updating CircuitPython libraries...")
     
     try:
+        # Change to the CIRCUITPY directory first
+        import os
+        original_dir = os.getcwd()
+        os.chdir(drive_path)
+
         result = subprocess.run(
-            ["circup", "install", "--path", drive_path, "-a"],
+            ["circup", "install", "-a"],  # Removed --path
             capture_output=True,
             text=True,
             check=True
         )
+
+        os.chdir(original_dir)
         print(result.stdout)
         print_success("Libraries installed/updated")
         return True
