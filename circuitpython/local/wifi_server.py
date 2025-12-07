@@ -98,39 +98,48 @@ class WebServerTask:
         """Handle a client connection"""
         try:
             client.settimeout(2.0)
-            
-            # Read request
+
+            # Read request - use recv_into or different approach
             request = b""
+            buffer = bytearray(1024)
+
             while True:
                 try:
-                    chunk = client.recv(1024)
-                    if not chunk:
+                    # CircuitPython socket uses recv_into
+                    nbytes = client.recv_into(buffer, 1024)
+                    if nbytes == 0:
                         break
-                    request += chunk
+                    request += buffer[:nbytes]
                     if b"\r\n\r\n" in request:
                         break
-                except OSError:
-                    break
-            
+                except OSError as e:
+                    # Timeout or no more data
+                    if len(request) > 0:
+                        break
+                    else:
+                        return
+
             if not request:
                 return
-            
+
             # Parse request
-            request_str = request.decode('utf-8', errors='ignore')
+            request_str = request.decode('utf-8')
             path, accepts_gzip = self._parse_request(request_str)
-            
+
             if self.debug:
                 print(f"[Web] GET {path} (gzip: {accepts_gzip})")
-            
+
             # Serve file or API
             if path.startswith('/api/'):
                 self._serve_api(client, path)
             else:
                 self._serve_file(client, path, accepts_gzip)
-                
+
         except Exception as e:
             if self.debug:
                 print(f"[Web] Error: {e}")
+                import traceback
+                traceback.print_exception(e)
         finally:
             try:
                 client.close()
