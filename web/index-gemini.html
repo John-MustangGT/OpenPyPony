@@ -83,7 +83,7 @@ Roboto, Helvetica, Arial, sans-serif;
             const msEl = document.getElementById('ms');
 
             function fetchData() {
-                fetch('/api/live')
+                fetch('/api')
                     .then(response => response.json())
                     .then(data => {
                         latEl.textContent = data.lat.toFixed(6);

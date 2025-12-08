@@ -2,3 +2,4 @@ adafruit_lis3dh
 adafruit_displayio_ssd1306
 adafruit_display_text
 adafruit_gps
+adafruit_httpserver
