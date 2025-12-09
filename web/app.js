@@ -1,5 +1,5 @@
 // OpenPonyLogger Web UI - Application Logic
-// Mock data generator for prototyping
+// Updated to fetch REAL data from API endpoints
 
 class OpenPonyLogger {
     constructor() {
@@ -11,6 +11,18 @@ class OpenPonyLogger {
         this.additionalPids = [];
         this.fuelLog = this.loadFuelLog();
         this.pidTestResults = {};
+        this.lastDataUpdate = 0;
+        this.apiUpdateInterval = 250; // 250ms = 4Hz
+        
+        // Real-time data from API
+        this.liveData = {
+            accel: { gx: 0, gy: 0, gz: 0, g_total: 1.0 },
+            gps: { 
+                lat: 0, lon: 0, alt: 0, speed: 0, heading: 0,
+                satellites: 0, fix_quality: 0, hdop: 99.9
+            },
+            system: { uptime: 0, time_source: 'RTC' }
+        };
         
         this.init();
     }
@@ -25,9 +37,223 @@ class OpenPonyLogger {
         this.setupFuelLog();
         this.setupPIDTesting();
         this.setupConfig();
-        this.startDataSimulation();
         this.updateConnectionStatus();
         this.applyStartupTab();
+        
+        // Start fetching real data
+        this.startRealDataFetch();
+    }
+
+    // Real Data Fetching
+    startRealDataFetch() {
+        // Fetch initial data
+        this.fetchLiveData();
+        this.fetchSystemStatus();
+        
+        // Set up periodic updates
+        setInterval(() => this.fetchLiveData(), this.apiUpdateInterval);
+        setInterval(() => this.fetchSystemStatus(), 2000); // Status every 2s
+        setInterval(() => this.updateStatus(), 2000); // Update display every 2s
+    }
+
+    async fetchLiveData() {
+        try {
+            const response = await fetch('/api/live');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            
+            // Update live data
+            this.liveData.accel = data.accel || this.liveData.accel;
+            this.liveData.gps = data.gps || this.liveData.gps;
+            this.liveData.system = data.system || this.liveData.system;
+            
+            this.lastDataUpdate = Date.now();
+            
+            // Update displays if on relevant tabs
+            const activeTab = document.querySelector('.tab-button.active')?.dataset.tab;
+            
+            if (activeTab === 'gauges') {
+                this.updateGaugesFromRealData();
+            } else if (activeTab === 'gforce') {
+                this.updateGForceFromRealData();
+            } else if (activeTab === 'gps') {
+                this.updateGPSFromRealData();
+            }
+            
+        } catch (error) {
+            console.error('Failed to fetch live data:', error);
+            // Connection lost - show warning
+            this.showConnectionWarning();
+        }
+    }
+
+    async fetchSystemStatus() {
+        try {
+            const response = await fetch('/api/status');
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            
+            const data = await response.json();
+            
+            // Update system info
+            if (data.version) {
+                const versionEl = document.getElementById('version');
+                if (versionEl) {
+                    versionEl.textContent = `v${data.version}`;
+                }
+            }
+            
+            // Update connection status
+            this.updateConnectionStatus(true, data.gps_time_synced);
+            
+        } catch (error) {
+            console.error('Failed to fetch system status:', error);
+        }
+    }
+
+    showConnectionWarning() {
+        const timeSinceUpdate = Date.now() - this.lastDataUpdate;
+        if (timeSinceUpdate > 5000) { // No data for 5 seconds
+            const statusDot = document.getElementById('connectionStatus');
+            const statusText = document.getElementById('connectionText');
+            
+            if (statusDot) statusDot.classList.remove('connected');
+            if (statusText) statusText.textContent = 'Connection Lost';
+        }
+    }
+
+    updateConnectionStatus(connected = true, gpsTimeSynced = false) {
+        const statusDot = document.getElementById('connectionStatus');
+        const statusText = document.getElementById('connectionText');
+        
+        if (statusDot && statusText) {
+            if (connected) {
+                statusDot.classList.add('connected');
+                statusText.textContent = gpsTimeSynced ? 'Connected (GPS Time)' : 'Connected';
+            } else {
+                statusDot.classList.remove('connected');
+                statusText.textContent = 'Connecting...';
+            }
+        }
+    }
+
+    // Update gauges with real data
+    updateGaugesFromRealData() {
+        if (!this.liveData.accel) return;
+        
+        // Note: We don't have OBD-II data yet, so speed/RPM/etc remain at 0
+        // These will be updated when OBD-II is integrated
+        
+        this.gauges.speed.value = 0; // TODO: Get from GPS or OBD-II
+        this.gauges.rpm.value = 0;   // TODO: Get from OBD-II
+        this.gauges.temp.value = 185; // TODO: Get from OBD-II
+        this.gauges.oilPressure.value = 40; // TODO: Get from OBD-II
+        this.gauges.boost.value = -2; // TODO: Get from OBD-II
+        this.gauges.throttle.value = 0; // TODO: Get from OBD-II
+    }
+
+    // Update G-Force display with real data
+    updateGForceFromRealData() {
+        if (!this.liveData.accel) return;
+        
+        const accel = this.liveData.accel;
+        
+        // Update display values
+        document.getElementById('gforceLat').textContent = accel.gx.toFixed(2) + 'g';
+        document.getElementById('gforceLong').textContent = accel.gy.toFixed(2) + 'g';
+        document.getElementById('gforceVert').textContent = accel.gz.toFixed(2) + 'g';
+        
+        // Update peak values
+        if (Math.abs(accel.gy) > this.gforcePeaks.maxAccel) {
+            if (accel.gy > 0) {
+                this.gforcePeaks.maxAccel = accel.gy;
+                document.getElementById('maxAccel').textContent = this.gforcePeaks.maxAccel.toFixed(2) + 'g';
+            }
+        }
+        
+        if (accel.gy < 0 && Math.abs(accel.gy) > this.gforcePeaks.maxBrake) {
+            this.gforcePeaks.maxBrake = Math.abs(accel.gy);
+            document.getElementById('maxBrake').textContent = this.gforcePeaks.maxBrake.toFixed(2) + 'g';
+        }
+        
+        const cornerG = Math.abs(accel.gx);
+        if (cornerG > this.gforcePeaks.maxCorner) {
+            this.gforcePeaks.maxCorner = cornerG;
+            document.getElementById('maxCorner').textContent = this.gforcePeaks.maxCorner.toFixed(2) + 'g';
+        }
+        
+        // Store for drawing
+        this.gforceData = {
+            lat: accel.gx,
+            long: accel.gy,
+            vert: accel.gz
+        };
+    }
+
+    // Update GPS display with real data
+    updateGPSFromRealData() {
+        if (!this.liveData.gps) return;
+        
+        const gps = this.liveData.gps;
+        
+        // Update display
+        document.getElementById('gpsLat').textContent = gps.lat.toFixed(6) + '°';
+        document.getElementById('gpsLon').textContent = gps.lon.toFixed(6) + '°';
+        document.getElementById('gpsAlt').textContent = gps.alt.toFixed(0) + ' ft';
+        document.getElementById('gpsHeading').textContent = gps.heading.toFixed(0) + '°';
+        
+        // Convert knots to MPH (1 knot = 1.15078 mph)
+        const speedMph = gps.speed * 1.15078;
+        document.getElementById('gpsSpeed').textContent = speedMph.toFixed(1) + ' MPH';
+        
+        if (speedMph > this.gpsData.maxSpeed) {
+            this.gpsData.maxSpeed = speedMph;
+            document.getElementById('gpsMaxSpeed').textContent = speedMph.toFixed(1) + ' MPH';
+        }
+        
+        // Update GPS data for drawing
+        this.gpsData.lat = gps.lat;
+        this.gpsData.lon = gps.lon;
+        this.gpsData.alt = gps.alt;
+        this.gpsData.heading = gps.heading;
+        this.gpsData.speed = speedMph;
+    }
+
+    // Update status display with real data
+    updateStatus() {
+        if (!this.liveData.system) return;
+        
+        // System status
+        const uptime = this.liveData.system.uptime;
+        const hours = Math.floor(uptime / 3600);
+        const minutes = Math.floor((uptime % 3600) / 60);
+        const seconds = uptime % 60;
+        
+        const uptimeStr = hours > 0 
+            ? `${hours}h ${minutes}m`
+            : minutes > 0 
+                ? `${minutes}m ${seconds}s`
+                : `${seconds}s`;
+        
+        const uptimeEl = document.getElementById('uptime');
+        if (uptimeEl) uptimeEl.textContent = uptimeStr;
+        
+        // GPS status
+        const gps = this.liveData.gps;
+        if (gps) {
+            const gpsStatus = document.getElementById('gpsStatus');
+            const gpsSats = document.getElementById('gpsSats');
+            
+            if (gpsStatus) {
+                const hasGoodFix = gps.fix_quality >= 1 && gps.satellites >= 4;
+                gpsStatus.textContent = hasGoodFix ? '3D Fix' : 'No Fix';
+                gpsStatus.className = 'status-badge ' + (hasGoodFix ? 'connected' : 'disconnected');
+            }
+            
+            if (gpsSats) {
+                gpsSats.textContent = gps.satellites.toString();
+            }
+        }
     }
 
     // Tab Navigation
@@ -56,16 +282,21 @@ class OpenPonyLogger {
     onTabChange(tabName) {
         switch(tabName) {
             case 'gauges':
-                this.updateGauges();
+                this.updateGaugesFromRealData();
                 break;
             case 'gforce':
+                this.updateGForceFromRealData();
                 this.drawGForce();
                 break;
             case 'gps':
+                this.updateGPSFromRealData();
                 this.drawGPS();
                 break;
             case 'sessions':
                 this.renderSessions();
+                break;
+            case 'status':
+                this.updateStatus();
                 break;
         }
     }
@@ -242,23 +473,6 @@ class OpenPonyLogger {
         }).draw();
     }
 
-    updateGauges() {
-        // Simulate realistic driving data
-        const speed = 45 + Math.random() * 30;
-        const rpm = 2.5 + Math.random() * 2;
-        const temp = 185 + Math.random() * 10;
-        const oilPressure = 40 + Math.random() * 20;
-        const boost = -2 + Math.random() * 8;
-        const throttle = Math.random() * 100;
-
-        this.gauges.speed.value = speed;
-        this.gauges.rpm.value = rpm;
-        this.gauges.temp.value = temp;
-        this.gauges.oilPressure.value = oilPressure;
-        this.gauges.boost.value = boost;
-        this.gauges.throttle.value = throttle;
-    }
-
     // G-Force Display
     setupGForceDisplay() {
         const canvas = document.getElementById('gforceCanvas');
@@ -310,7 +524,7 @@ class OpenPonyLogger {
         ctx.textAlign = 'left';
         ctx.fillText('1.0g', centerX + radius + 10, centerY + 5);
 
-        // Draw current G-force position
+        // Draw current G-force position using REAL data
         const gX = this.gforceData.lat * radius;
         const gY = -this.gforceData.long * radius; // Negative for forward=up
 
@@ -339,33 +553,6 @@ class OpenPonyLogger {
         requestAnimationFrame(() => this.drawGForce());
     }
 
-    updateGForceData() {
-        // Simulate realistic G-forces
-        this.gforceData.lat = (Math.random() - 0.5) * 0.6;
-        this.gforceData.long = (Math.random() - 0.3) * 0.8;
-        this.gforceData.vert = 0.95 + Math.random() * 0.1;
-
-        // Update display values
-        document.getElementById('gforceLat').textContent = this.gforceData.lat.toFixed(2) + 'g';
-        document.getElementById('gforceLong').textContent = this.gforceData.long.toFixed(2) + 'g';
-        document.getElementById('gforceVert').textContent = this.gforceData.vert.toFixed(2) + 'g';
-
-        // Update peaks
-        if (this.gforceData.long > this.gforcePeaks.maxAccel) {
-            this.gforcePeaks.maxAccel = this.gforceData.long;
-            document.getElementById('maxAccel').textContent = this.gforcePeaks.maxAccel.toFixed(2) + 'g';
-        }
-        if (this.gforceData.long < -this.gforcePeaks.maxBrake) {
-            this.gforcePeaks.maxBrake = -this.gforceData.long;
-            document.getElementById('maxBrake').textContent = this.gforcePeaks.maxBrake.toFixed(2) + 'g';
-        }
-        const cornerG = Math.abs(this.gforceData.lat);
-        if (cornerG > this.gforcePeaks.maxCorner) {
-            this.gforcePeaks.maxCorner = cornerG;
-            document.getElementById('maxCorner').textContent = this.gforcePeaks.maxCorner.toFixed(2) + 'g';
-        }
-    }
-
     // GPS Display
     setupGPSDisplay() {
         const canvas = document.getElementById('gpsCanvas');
@@ -373,14 +560,51 @@ class OpenPonyLogger {
         canvas.height = 600;
         this.gpsCtx = canvas.getContext('2d');
         this.gpsData = {
-            lat: 42.2793,
-            lon: -71.4162,
-            alt: 525,
+            lat: 0,
+            lon: 0,
+            alt: 0,
             heading: 0,
             speed: 0,
             maxSpeed: 0,
-            satellites: this.generateMockSatellites()
+            satellites: []
         };
+        
+        // Fetch detailed GPS info including satellites
+        this.fetchGPSDetails();
+        setInterval(() => this.fetchGPSDetails(), 5000); // Update every 5s
+    }
+
+    async fetchGPSDetails() {
+        try {
+            const response = await fetch('/api/gps');
+            if (!response.ok) return;
+            
+            const data = await response.json();
+            
+            // Update satellite data for sky view
+            if (data.satellites && data.satellites.length > 0) {
+                this.gpsData.satellites = data.satellites.map((sat, idx) => ({
+                    id: sat.id || idx + 1,
+                    azimuth: Math.random() * 360, // Real azimuth/elevation not available yet
+                    elevation: 15 + Math.random() * 75,
+                    snr: sat.snr || 30
+                }));
+            }
+            
+            // Update satellite list
+            const satList = document.getElementById('satList');
+            if (satList && data.satellites) {
+                satList.innerHTML = data.satellites.slice(0, 8).map(sat => `
+                    <div class="satellite-item">
+                        <span class="sat-id">PRN ${sat.id}</span>
+                        <span class="sat-snr">${sat.snr ? sat.snr.toFixed(0) : '--'} dB</span>
+                    </div>
+                `).join('');
+            }
+            
+        } catch (error) {
+            console.error('Failed to fetch GPS details:', error);
+        }
     }
 
     drawGPS() {
@@ -420,32 +644,34 @@ class OpenPonyLogger {
         ctx.textAlign = 'left';
         ctx.fillText('E', centerX + radius + 15, centerY + 8);
 
-        // Draw satellites
-        this.gpsData.satellites.forEach(sat => {
-            const angle = (sat.azimuth - 90) * Math.PI / 180;
-            const distance = radius * (1 - sat.elevation / 90);
-            const x = centerX + distance * Math.cos(angle);
-            const y = centerY + distance * Math.sin(angle);
+        // Draw satellites from REAL data
+        if (this.gpsData.satellites && this.gpsData.satellites.length > 0) {
+            this.gpsData.satellites.forEach(sat => {
+                const angle = (sat.azimuth - 90) * Math.PI / 180;
+                const distance = radius * (1 - sat.elevation / 90);
+                const x = centerX + distance * Math.cos(angle);
+                const y = centerY + distance * Math.sin(angle);
 
-            // Satellite color based on SNR
-            let color;
-            if (sat.snr > 35) color = '#4caf50';
-            else if (sat.snr > 25) color = '#ffc107';
-            else color = '#f44336';
+                // Satellite color based on SNR
+                let color;
+                if (sat.snr > 35) color = '#4caf50';
+                else if (sat.snr > 25) color = '#ffc107';
+                else color = '#f44336';
 
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(x, y, 8, 0, Math.PI * 2);
-            ctx.fill();
+                ctx.fillStyle = color;
+                ctx.beginPath();
+                ctx.arc(x, y, 8, 0, Math.PI * 2);
+                ctx.fill();
 
-            // Satellite ID
-            ctx.fillStyle = '#ffffff';
-            ctx.font = '12px sans-serif';
-            ctx.textAlign = 'center';
-            ctx.fillText(sat.id, x, y - 12);
-        });
+                // Satellite ID
+                ctx.fillStyle = '#ffffff';
+                ctx.font = '12px sans-serif';
+                ctx.textAlign = 'center';
+                ctx.fillText(sat.id, x, y - 12);
+            });
+        }
 
-        // Draw heading indicator
+        // Draw heading indicator using REAL heading
         const headingAngle = (this.gpsData.heading - 90) * Math.PI / 180;
         ctx.strokeStyle = '#ff6b35';
         ctx.lineWidth = 3;
@@ -460,45 +686,7 @@ class OpenPonyLogger {
         requestAnimationFrame(() => this.drawGPS());
     }
 
-    generateMockSatellites() {
-        const satellites = [];
-        for (let i = 1; i <= 12; i++) {
-            satellites.push({
-                id: i,
-                azimuth: Math.random() * 360,
-                elevation: 15 + Math.random() * 75,
-                snr: 20 + Math.random() * 30
-            });
-        }
-        return satellites;
-    }
-
-    updateGPSData() {
-        this.gpsData.heading = (this.gpsData.heading + 1) % 360;
-        this.gpsData.speed = 45 + Math.random() * 20;
-        if (this.gpsData.speed > this.gpsData.maxSpeed) {
-            this.gpsData.maxSpeed = this.gpsData.speed;
-        }
-
-        // Update display
-        document.getElementById('gpsLat').textContent = this.gpsData.lat.toFixed(6) + '°';
-        document.getElementById('gpsLon').textContent = this.gpsData.lon.toFixed(6) + '°';
-        document.getElementById('gpsAlt').textContent = this.gpsData.alt.toFixed(0) + ' ft';
-        document.getElementById('gpsHeading').textContent = this.gpsData.heading.toFixed(0) + '°';
-        document.getElementById('gpsSpeed').textContent = this.gpsData.speed.toFixed(1) + ' MPH';
-        document.getElementById('gpsMaxSpeed').textContent = this.gpsData.maxSpeed.toFixed(1) + ' MPH';
-
-        // Update satellite list
-        const satList = document.getElementById('satList');
-        satList.innerHTML = this.gpsData.satellites.slice(0, 8).map(sat => `
-            <div class="satellite-item">
-                <span class="sat-id">PRN ${sat.id}</span>
-                <span class="sat-snr">${sat.snr.toFixed(0)} dB</span>
-            </div>
-        `).join('');
-    }
-
-    // Sessions Management
+    // Sessions Management (keeping existing mock data for now)
     loadMockSessions() {
         return [
             {
@@ -522,17 +710,6 @@ class OpenPonyLogger {
                 maxSpeed: '128 MPH',
                 maxGForce: '1.24g',
                 avgSpeed: '75 MPH'
-            },
-            {
-                id: 3,
-                name: 'Evening Drive',
-                date: '2024-11-30',
-                time: '06:45 PM',
-                duration: '42:15',
-                distance: '31.2 mi',
-                maxSpeed: '75 MPH',
-                maxGForce: '0.68g',
-                avgSpeed: '48 MPH'
             }
         ];
     }
@@ -656,7 +833,7 @@ class OpenPonyLogger {
         alert('Exporting all sessions to CSV (functionality to be implemented)');
     }
 
-    // Configuration
+    // Configuration (keeping existing implementation)
     setupConfig() {
         const saveButton = document.getElementById('saveConfig');
         const resetButton = document.getElementById('resetConfig');
@@ -852,7 +1029,6 @@ class OpenPonyLogger {
             recordAccel: document.getElementById('recordAccel').checked,
             wifiMode: document.getElementById('wifiMode').value,
             wifiSSID: document.getElementById('wifiSSID').value,
-            // Network settings for client mode
             useDHCP: document.getElementById('useDHCP').checked,
             staticIP: document.getElementById('staticIP').value,
             subnetMask: document.getElementById('subnetMask').value,
@@ -866,7 +1042,6 @@ class OpenPonyLogger {
             additionalPids: this.additionalPids
         };
 
-        // Save to localStorage
         localStorage.setItem('openPonyLoggerConfig', JSON.stringify(config));
         localStorage.setItem('startupTab', config.startupTab);
 
@@ -900,106 +1075,23 @@ class OpenPonyLogger {
         alert('Factory reset complete');
     }
 
-    // Status Updates
-    updateStatus() {
-        // System status
-        document.getElementById('cpuTemp').textContent = (40 + Math.random() * 15).toFixed(1) + '°C';
-        document.getElementById('memUsed').textContent = (50 + Math.random() * 30).toFixed(0) + '%';
-        document.getElementById('uptime').textContent = '3h 42m';
-        document.getElementById('wifiSignal').textContent = '-' + (40 + Math.random() * 20).toFixed(0) + ' dBm';
-
-        // OBD-II status
-        const obdConnected = Math.random() > 0.3;
-        const obdStatus = document.getElementById('obdStatus');
-        obdStatus.textContent = obdConnected ? 'Connected' : 'Disconnected';
-        obdStatus.className = 'status-badge ' + (obdConnected ? 'connected' : 'disconnected');
-        
-        if (obdConnected) {
-            document.getElementById('obdProtocol').textContent = 'CAN (ISO 15765-4)';
-            document.getElementById('obdVin').textContent = '1ZVBP8AM5E5******';
-            document.getElementById('obdDataRate').textContent = (80 + Math.random() * 20).toFixed(0) + ' Hz';
-        }
-
-        // GPS status
-        const gpsConnected = Math.random() > 0.2;
-        const gpsStatus = document.getElementById('gpsStatus');
-        gpsStatus.textContent = gpsConnected ? '3D Fix' : 'No Fix';
-        gpsStatus.className = 'status-badge ' + (gpsConnected ? 'connected' : 'disconnected');
-        
-        if (gpsConnected) {
-            document.getElementById('gpsSats').textContent = (8 + Math.floor(Math.random() * 5)).toString();
-            document.getElementById('gpsFixQuality').textContent = 'GPS + GLONASS';
-            document.getElementById('gpsHdop').textContent = (0.8 + Math.random() * 0.5).toFixed(1);
-        }
-
-        // Storage
-        const storagePercent = 35 + Math.random() * 5;
-        document.getElementById('storageBar').style.width = storagePercent + '%';
-    }
-
-    updateConnectionStatus() {
-        const statusDot = document.getElementById('connectionStatus');
-        const statusText = document.getElementById('connectionText');
-        
-        // Simulate connection after 2 seconds
-        setTimeout(() => {
-            statusDot.classList.add('connected');
-            statusText.textContent = 'Connected';
-        }, 2000);
-    }
-
-    // Data Simulation
-    startDataSimulation() {
-        // Update gauges every 500ms
-        setInterval(() => {
-            if (document.querySelector('.tab-button.active').dataset.tab === 'gauges') {
-                this.updateGauges();
-            }
-        }, 500);
-
-        // Update G-force data every 100ms
-        setInterval(() => {
-            this.updateGForceData();
-        }, 100);
-
-        // Update GPS data every 1000ms
-        setInterval(() => {
-            this.updateGPSData();
-        }, 1000);
-
-        // Update status every 2000ms
-        setInterval(() => {
-            if (document.querySelector('.tab-button.active').dataset.tab === 'status') {
-                this.updateStatus();
-            }
-        }, 2000);
-
-        // Initial status update
-        this.updateStatus();
-    }
-
-    // Fuel Log Management
+    // Fuel Log Management (keeping existing implementation)
     setupFuelLog() {
-        // Initialize fuel log display
         this.renderFuelLog();
         this.updateFuelStats();
 
-        // Add Fill-Up button
         document.getElementById('addFuelEntry').addEventListener('click', () => {
             this.showFuelEntryForm();
         });
 
-        // Cancel button
         document.getElementById('cancelFuelEntry').addEventListener('click', () => {
             this.hideFuelEntryForm();
         });
 
-        // Save button
         document.getElementById('saveFuelEntry').addEventListener('click', () => {
             this.saveFuelEntry();
         });
 
-        // Export button
         document.getElementById('exportFuelLog').addEventListener('click', () => {
             this.exportFuelLog();
         });
@@ -1018,12 +1110,10 @@ class OpenPonyLogger {
         const form = document.getElementById('fuelEntryForm');
         form.style.display = 'block';
         
-        // Set current date and time
         const now = new Date();
         document.getElementById('fuelDate').value = now.toISOString().split('T')[0];
         document.getElementById('fuelTime').value = now.toTimeString().slice(0, 5);
         
-        // Clear other fields
         document.getElementById('fuelOdometer').value = '';
         document.getElementById('fuelGallons').value = '';
         document.getElementById('fuelPricePerGallon').value = '';
@@ -1049,7 +1139,6 @@ class OpenPonyLogger {
             return;
         }
 
-        // Calculate MPG if previous entry exists
         let mpg = null;
         let milesDriven = null;
         if (this.fuelLog.length > 0) {
@@ -1097,7 +1186,6 @@ class OpenPonyLogger {
             return;
         }
 
-        // Sort by timestamp, newest first
         const sortedLog = [...this.fuelLog].sort((a, b) => 
             new Date(b.timestamp) - new Date(a.timestamp)
         );
@@ -1216,7 +1304,6 @@ class OpenPonyLogger {
             return;
         }
 
-        // Create CSV
         const headers = ['Date', 'Time', 'Odometer', 'Miles Driven', 'Gallons', 'MPG', 'Price/Gal', 'Total Cost', 'Cost/Mile', 'Location', 'Notes'];
         const rows = this.fuelLog.map(entry => {
             const date = new Date(entry.timestamp);
@@ -1246,7 +1333,7 @@ class OpenPonyLogger {
         URL.revokeObjectURL(url);
     }
 
-    // PID Testing
+    // PID Testing (keeping existing implementation)
     setupPIDTesting() {
         document.getElementById('testAllPidsButton').addEventListener('click', () => {
             this.testAllPIDs();
@@ -1268,7 +1355,6 @@ class OpenPonyLogger {
         outputDiv.innerHTML = '';
         summaryDiv.textContent = '';
 
-        // Standard PIDs to test
         const standardPids = [
             { pid: '0C', name: 'Engine RPM' },
             { pid: '0D', name: 'Vehicle Speed' },
@@ -1284,7 +1370,6 @@ class OpenPonyLogger {
         let supported = 0;
         const total = standardPids.length + this.additionalPids.length;
 
-        // Test standard PIDs
         for (const pidInfo of standardPids) {
             const result = await this.testPID(pidInfo.pid);
             tested++;
@@ -1297,10 +1382,9 @@ class OpenPonyLogger {
             }
             
             progressDiv.textContent = `Testing... ${tested}/${total}`;
-            await new Promise(resolve => setTimeout(resolve, 100)); // Small delay for readability
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
 
-        // Test custom PIDs
         for (const customPid of this.additionalPids) {
             const result = await this.testPID(customPid.pid);
             tested++;
@@ -1359,17 +1443,13 @@ class OpenPonyLogger {
     }
 
     async testPID(pid) {
-        // Simulate PID testing (in real implementation, this would query OBD-II)
-        // For demo purposes, randomly determine support
-        await new Promise(resolve => setTimeout(resolve, 50)); // Simulate query delay
+        await new Promise(resolve => setTimeout(resolve, 50));
         
-        // Mock: Standard PIDs are "supported", PID 2F and A6 are "not supported"
         const unsupportedPids = ['2F', 'A6'];
         const isSupported = !unsupportedPids.includes(pid.toUpperCase());
         
         let value = 'N/A';
         if (isSupported) {
-            // Generate mock value based on PID
             switch(pid.toUpperCase()) {
                 case '0C': value = '847 RPM'; break;
                 case '0D': value = '0 km/h'; break;
@@ -1384,7 +1464,7 @@ class OpenPonyLogger {
         return { supported: isSupported, value: value };
     }
 
-    // WiFi Network Configuration
+    // WiFi Network Configuration (keeping existing implementation)
     toggleClientNetworkSettings(show) {
         const clientSettings = document.getElementById('clientNetworkSettings');
         clientSettings.style.display = show ? 'block' : 'none';
@@ -1395,7 +1475,7 @@ class OpenPonyLogger {
         staticSettings.style.display = show ? 'block' : 'none';
     }
 
-    // Bluetooth Device Management
+    // Bluetooth Device Management (keeping existing implementation)
     async scanBluetoothDevices() {
         const scanButton = document.getElementById('scanBluetoothButton');
         const scanButtonText = document.getElementById('btScanButtonText');
@@ -1403,14 +1483,11 @@ class OpenPonyLogger {
         const deviceList = document.getElementById('bluetoothDeviceList');
         const deviceSelect = document.getElementById('btDeviceSelect');
 
-        // Show scanning state
         scanButton.disabled = true;
         scanButtonText.textContent = 'Scanning...';
 
-        // Simulate Bluetooth scan (in real implementation, this would use Bluetooth API)
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Mock devices (replace with real Bluetooth scan results)
         const mockDevices = [
             { id: 'bt:01', name: 'iPhone 13 Pro', rssi: -45 },
             { id: 'bt:02', name: 'Galaxy Buds', rssi: -65 },
@@ -1419,23 +1496,18 @@ class OpenPonyLogger {
             { id: 'bt:05', name: 'Pixel 7', rssi: -80 }
         ];
 
-        // Sort by signal strength (RSSI)
         mockDevices.sort((a, b) => b.rssi - a.rssi);
 
-        // Populate dropdown
         deviceSelect.innerHTML = mockDevices.map(device => 
             `<option value="${device.id}">${device.name} (${device.rssi} dBm)</option>`
         ).join('');
 
-        // Show device list and refresh button
         deviceList.style.display = 'block';
         refreshButton.style.display = 'inline-block';
 
-        // Reset scan button
         scanButton.disabled = false;
         scanButtonText.textContent = 'Scan for Devices';
 
-        // Enable pair button if device selected
         document.getElementById('pairBluetoothButton').disabled = false;
 
         console.log(`Found ${mockDevices.length} Bluetooth devices`);
@@ -1455,27 +1527,23 @@ class OpenPonyLogger {
         pairButton.disabled = true;
         pairButton.textContent = 'Pairing...';
 
-        // Simulate pairing process
         await new Promise(resolve => setTimeout(resolve, 2000));
 
-        // Update paired device status
         const pairedStatus = document.getElementById('pairedDeviceStatus');
         const pairedDeviceName = document.getElementById('pairedDeviceName');
         const connectionStatus = document.getElementById('btConnectionStatus');
         const signalStrength = document.getElementById('btSignalStrength');
 
-        pairedDeviceName.textContent = selectedName.split(' (')[0]; // Remove RSSI from display
+        pairedDeviceName.textContent = selectedName.split(' (')[0];
         connectionStatus.textContent = 'Connected';
         connectionStatus.className = 'status-badge status-connected';
-        signalStrength.textContent = selectedName.match(/\(.*\)/)[0]; // Extract RSSI
+        signalStrength.textContent = selectedName.match(/\(.*\)/)[0];
 
         pairedStatus.style.display = 'block';
 
-        // Show unpair button, hide pair button
         pairButton.style.display = 'none';
         document.getElementById('unpairBluetoothButton').style.display = 'inline-block';
 
-        // Save to localStorage
         localStorage.setItem('pairedBluetoothDevice', JSON.stringify({
             id: selectedId,
             name: selectedName.split(' (')[0]
@@ -1489,46 +1557,37 @@ class OpenPonyLogger {
             return;
         }
 
-        // Hide paired status
         document.getElementById('pairedDeviceStatus').style.display = 'none';
 
-        // Show pair button, hide unpair button
         document.getElementById('pairBluetoothButton').style.display = 'inline-block';
         document.getElementById('unpairBluetoothButton').style.display = 'none';
         document.getElementById('pairBluetoothButton').textContent = 'Pair Device';
 
-        // Clear from localStorage
         localStorage.removeItem('pairedBluetoothDevice');
 
         alert('Device unpaired successfully');
     }
 }
 
-
-
 // Initialize the application
 let app;
 document.addEventListener('DOMContentLoaded', () => {
-    // Check if gauge library is already loaded
     if (window.gaugeLibraryLoaded && typeof RadialGauge !== 'undefined') {
-        console.log('Initializing OpenPonyLogger...');
+        console.log('Initializing OpenPonyLogger with REAL data integration...');
         app = new OpenPonyLogger();
     } else {
-        // Wait for gauge library to load
         console.log('Waiting for gauge library to load...');
         window.addEventListener('gaugeLibraryReady', () => {
-            console.log('Initializing OpenPonyLogger...');
+            console.log('Initializing OpenPonyLogger with REAL data integration...');
             app = new OpenPonyLogger();
         });
         
-        // Fallback: If library doesn't load within 5 seconds, show error
         setTimeout(() => {
             if (!window.gaugeLibraryLoaded) {
                 console.error('❌ Gauge library failed to load!');
                 console.error('Download gauge.min.js from:');
                 console.error('https://github.com/Mikhus/canvas-gauges/releases/download/v2.1.7/gauge.min.js');
                 
-                // Show error message to user
                 document.body.innerHTML = `
                     <div style="padding: 2rem; max-width: 800px; margin: 0 auto; font-family: sans-serif;">
                         <h1 style="color: #f44336;">⚠️ Gauge Library Not Found</h1>
@@ -1546,13 +1605,6 @@ document.addEventListener('DOMContentLoaded', () => {
                             <li>Place it in the same directory as <code>index.html</code></li>
                             <li>Refresh this page (Ctrl+F5)</li>
                         </ol>
-                        <h2>Or Use Helper Script:</h2>
-                        <pre style="background: #1a1a1a; color: #4caf50; padding: 1rem; border-radius: 4px;">
-# Linux/Mac
-./download-gauge-library.sh
-
-# Windows
-download-gauge-library.bat</pre>
                         <p style="margin-top: 2rem; padding: 1rem; background: #fff3cd; border-left: 4px solid #ffc107;">
                             <strong>Note:</strong> This is required for offline operation at the track!
                             See <code>OFFLINE_SETUP.md</code> for details.
