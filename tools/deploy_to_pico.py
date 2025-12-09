@@ -408,6 +408,7 @@ def validate_deployment(drive_path, check_mpy=False):
         "web/index.html.gz",
         "web/styles.css.gz",
         "web/app.js.gz",
+        "web/gauge.min.js.gz",
     ]
     
     all_valid = True

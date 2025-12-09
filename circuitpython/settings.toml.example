@@ -1,46 +1,140 @@
-# OpenPonyLogger Configuration File
-# All settings are optional - defaults will be used if not specified
+# ============================================================================
+# OpenPonyLogger Configuration
+# ============================================================================
 
-# ============================================================================
-# WiFi Settings
-# ============================================================================
+# WiFi Configuration
 WIFI_SSID = "OpenPonyLogger"
 WIFI_PASSWORD = "mustanggt"
 DEVICE_NAME = "OpenPyPony-01"
 
 # ============================================================================
-# GPS Settings
+# Display Configuration
 # ============================================================================
-GPS_UPDATE_RATE = 1000    # milliseconds (1000 = 1Hz, 500 = 2Hz, etc.)
-GPS_BAUDRATE = 9600       # GPS module baud rate
+
+# SPLASH_DURATION: How long to show the splash screen on boot (in seconds)
+# Range: 0-10 seconds (0 = skip splash, 3 = default, 10 = extended)
+SPLASH_DURATION = "3"
+
+# GFORCE_GRAPH_SCALE: Pixels per G on OLED graph (higher = more sensitive)
+# Range: 10-50 (20 = default, 50 = very sensitive)
+GFORCE_GRAPH_SCALE = "20"
 
 # ============================================================================
-# Accelerometer Settings
+# Time Configuration
 # ============================================================================
-ACCEL_SAMPLE_RATE = 100   # Hz (10, 25, 50, 100 supported)
-ACCEL_RANGE = 2           # ±2g, ±4g, or ±8g
+
+# TIMEZONE_OFFSET: Hours offset from UTC
+# Examples: -5 for EST, -4 for EDT, -8 for PST, -7 for PDT, 0 for UTC
+TIMEZONE_OFFSET = "-5"
+
+# DST_ENABLED: Set to "true" during daylight saving time, "false" otherwise
+DST_ENABLED = "false"
 
 # ============================================================================
-# Display Settings
+# GPS Configuration
 # ============================================================================
-GFORCE_GRAPH_SCALE = 20   # pixels per G on OLED graph (higher = more sensitive)
-SPLASH_DURATION = 10      # seconds to show splash screen on startup
+
+# GPS_UPDATE_RATE: GPS update interval in milliseconds
+# Common values: 1000 (1Hz), 2000 (0.5Hz), 5000 (0.2Hz)
+GPS_UPDATE_RATE = "1000"
+
+# GPS_BAUDRATE: Serial baud rate for GPS module
+# Standard: 9600 (ATGM336H default)
+GPS_BAUDRATE = "9600"
 
 # ============================================================================
-# Logging Settings
+# Accelerometer Configuration
 # ============================================================================
-LOG_FLUSH_SIZE = 50       # number of samples before flushing to SD card
-BYTES_PER_SAMPLE = 90     # estimated bytes per CSV line (for time calc)
+
+# ACCEL_SAMPLE_RATE: Accelerometer sampling rate in Hz
+# Supported: 10, 25, 50, 100
+ACCEL_SAMPLE_RATE = "100"
+
+# ACCEL_RANGE: Accelerometer measurement range
+# Values: 2 (±2g), 4 (±4g), 8 (±8g)
+ACCEL_RANGE = "2"
+
+# ============================================================================
+# Logging Configuration
+# ============================================================================
+
+# Binary logging format (OpenPony format)
+# Set to "true" to enable binary logging alongside CSV
+# Binary format is more efficient and preserves full precision
+BINARY_LOGGING = "false"
+
+# LOG_FLUSH_SIZE: Number of samples to buffer before writing to SD card
+# Higher = better performance, but more data loss if power interrupted
+# Range: 10-100 (50 = default, balanced)
+LOG_FLUSH_SIZE = "50"
+
+# BYTES_PER_SAMPLE: Estimated bytes per CSV line (for SD time calculation)
+# Default: 90 bytes (accel + GPS + timestamps)
+BYTES_PER_SAMPLE = "90"
 
 # ============================================================================
 # SD Card Management
 # ============================================================================
-SD_HIGH_WATER_MB = 100    # Start cleanup when free space drops below this
-SD_LOW_WATER_MB = 200     # Clean up old files until this much space is free
-SD_CHECK_INTERVAL = 600   # Check SD space every N seconds (600 = 10 min)
+
+# SD_HIGH_WATER_MB: Start cleanup when free space drops below this (MB)
+# When space drops below this, old sessions are deleted
+SD_HIGH_WATER_MB = "100"
+
+# SD_LOW_WATER_MB: Clean up old files until this much space is free (MB)
+# Stop deleting when this amount of free space is reached
+SD_LOW_WATER_MB = "200"
+
+# SD_CHECK_INTERVAL: How often to check SD card space (seconds)
+# Default: 600 (10 minutes)
+SD_CHECK_INTERVAL = "600"
 
 # ============================================================================
-# Status/Debug
+# WiFi Access Point Configuration
 # ============================================================================
-STATUS_INTERVAL = 5000    # milliseconds between console status prints
-SERIAL_DEBUG = true       # Enable/disable debug output to serial console
+
+# AP_NO_DEFAULT_ROUTE: If "true", configure AP without default route
+# This prevents clients from trying to route internet traffic through the AP
+# Useful for isolated telemetry networks at the track
+# Set to "false" only if you plan to bridge the AP to actual internet
+AP_NO_DEFAULT_ROUTE = "true"
+
+# ============================================================================
+# Status and Debug
+# ============================================================================
+
+# STATUS_INTERVAL: How often to print status to console (milliseconds)
+# Default: 5000 (5 seconds)
+STATUS_INTERVAL = "5000"
+
+# SERIAL_DEBUG: Enable/disable debug output to serial console
+# Set to "false" for better performance at track
+SERIAL_DEBUG = "true"
+
+# ============================================================================
+# Quick Configuration Profiles
+# ============================================================================
+
+# Track Day (High Performance):
+#   ACCEL_SAMPLE_RATE = "100"
+#   GPS_UPDATE_RATE = "1000"
+#   LOG_FLUSH_SIZE = "100"
+#   SD_HIGH_WATER_MB = "50"
+#   SERIAL_DEBUG = "false"
+#   SPLASH_DURATION = "0"
+
+# Daily Commute (Balanced):
+#   ACCEL_SAMPLE_RATE = "50"
+#   GPS_UPDATE_RATE = "2000"
+#   LOG_FLUSH_SIZE = "50"
+#   SD_HIGH_WATER_MB = "100"
+#   SERIAL_DEBUG = "true"
+#   SPLASH_DURATION = "3"
+
+# Extended Recording (Battery Saving):
+#   ACCEL_SAMPLE_RATE = "25"
+#   GPS_UPDATE_RATE = "5000"
+#   LOG_FLUSH_SIZE = "25"
+#   SD_HIGH_WATER_MB = "200"
+#   SERIAL_DEBUG = "false"
+#   SPLASH_DURATION = "1"
+
