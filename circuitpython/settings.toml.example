@@ -8,6 +8,23 @@ WIFI_PASSWORD = "mustanggt"
 DEVICE_NAME = "OpenPyPony-01"
 
 # ============================================================================
+# Session Metadata (for binary logging)
+# ============================================================================
+
+# SESSION_NAME: Default name for logging sessions
+# Will be used when starting a new session via boot or settings change
+# Can be overridden via WebUI
+SESSION_NAME = ""
+
+# DRIVER_NAME: Driver's name for session metadata
+# Useful for multi-driver vehicles or track rentals
+DRIVER_NAME = ""
+
+# VEHICLE_ID: VIN or vehicle identifier
+# Used to tag sessions with vehicle information
+VEHICLE_ID = ""
+
+# ============================================================================
 # Display Configuration
 # ============================================================================
 
@@ -55,20 +72,26 @@ ACCEL_SAMPLE_RATE = "100"
 ACCEL_RANGE = "2"
 
 # ============================================================================
-# Logging Configuration
+# Binary Logging Configuration (v2 Format)
 # ============================================================================
 
-# Binary logging format (OpenPony format)
-# Set to "true" to enable binary logging alongside CSV
-# Binary format is more efficient and preserves full precision
-BINARY_LOGGING = "false"
+# BINARY_LOGGING: Enable binary format logging
+# Set to "true" to enable efficient binary logging with checksums
+# Binary format provides better performance and data integrity
+BINARY_LOGGING = "true"
+
+# GFORCE_EVENT_THRESHOLD: G-force level to trigger immediate data flush
+# When total G-force exceeds this value, data is immediately saved
+# This ensures high-G events (hard braking, crashes) are recorded
+# Range: 1.0-5.0 (3.0 = default, good for track use)
+GFORCE_EVENT_THRESHOLD = "3.0"
 
 # LOG_FLUSH_SIZE: Number of samples to buffer before writing to SD card
 # Higher = better performance, but more data loss if power interrupted
 # Range: 10-100 (50 = default, balanced)
 LOG_FLUSH_SIZE = "50"
 
-# BYTES_PER_SAMPLE: Estimated bytes per CSV line (for SD time calculation)
+# BYTES_PER_SAMPLE: Estimated bytes per sample (for SD time calculation)
 # Default: 90 bytes (accel + GPS + timestamps)
 BYTES_PER_SAMPLE = "90"
 
@@ -117,24 +140,23 @@ SERIAL_DEBUG = "true"
 # Track Day (High Performance):
 #   ACCEL_SAMPLE_RATE = "100"
 #   GPS_UPDATE_RATE = "1000"
-#   LOG_FLUSH_SIZE = "100"
-#   SD_HIGH_WATER_MB = "50"
+#   BINARY_LOGGING = "true"
+#   GFORCE_EVENT_THRESHOLD = "2.5"
 #   SERIAL_DEBUG = "false"
 #   SPLASH_DURATION = "0"
 
 # Daily Commute (Balanced):
 #   ACCEL_SAMPLE_RATE = "50"
 #   GPS_UPDATE_RATE = "2000"
-#   LOG_FLUSH_SIZE = "50"
-#   SD_HIGH_WATER_MB = "100"
+#   BINARY_LOGGING = "true"
+#   GFORCE_EVENT_THRESHOLD = "3.0"
 #   SERIAL_DEBUG = "true"
 #   SPLASH_DURATION = "3"
 
 # Extended Recording (Battery Saving):
 #   ACCEL_SAMPLE_RATE = "25"
 #   GPS_UPDATE_RATE = "5000"
-#   LOG_FLUSH_SIZE = "25"
-#   SD_HIGH_WATER_MB = "200"
+#   BINARY_LOGGING = "true"
+#   GFORCE_EVENT_THRESHOLD = "3.5"
 #   SERIAL_DEBUG = "false"
 #   SPLASH_DURATION = "1"
-

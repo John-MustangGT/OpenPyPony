@@ -240,6 +240,7 @@ def deploy_python_files(drive_path, backup=True, use_mpy=False):
         # Modules from circuitpython/local/
         "circuitpython/local/wifi_server.py": "wifi_server.py",
         "circuitpython/local/scheduler.py": "scheduler.py",
+        "circuitpython/local/binary_format.py": "binary_format.py",
 
         # Configuration (if exists)
         "circuitpython/settings.toml": "settings.toml",
@@ -403,6 +404,7 @@ def validate_deployment(drive_path, check_mpy=False):
     required_files = [
         f"code{py_ext}",
         f"wifi_server{py_ext}",
+        f"binary_format{py_ext}",
 #        f"web_server{py_ext}",
         "web/asset_map.py",  # Always .py
         "web/index.html.gz",
