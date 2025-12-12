@@ -254,7 +254,7 @@ void loop() {
 }
 
 // ============================================================================
-// Serial Communication
+// Serial Communication (OPTIMIZED)
 // ============================================================================
 
 void processSerialData() {
@@ -273,12 +273,12 @@ void processSerialData() {
     }
 }
 
-void processJSONMessage(String json) {
+void processJSONMessage(String jsonString) {  // ← Changed parameter name
     Serial.print("Pico → ESP: ");
-    Serial.println(json);
+    Serial.println(jsonString);
     
     StaticJsonDocument<2048> doc;
-    DeserializationError error = deserializeJson(doc, json);
+    DeserializationError error = deserializeJson(doc, jsonString);
     
     if (error) {
         Serial.print("JSON parse error: ");
@@ -289,23 +289,24 @@ void processJSONMessage(String json) {
     String type = doc["type"] | "";
     
     if (type == "update") {
-        handleTelemetryUpdate(doc);
+        handleTelemetryUpdate(doc, jsonString);  // ← Pass original string
     }
     else if (type == "satellites") {
-        handleSatelliteUpdate(doc);
+        handleSatelliteUpdate(doc, jsonString);  // ← Pass original string
     }
     else if (type == "files") {
-        handleFileList(doc);
+        handleFileList(doc, jsonString);  // ← Pass original string
     }
     else if (type == "file_start" || type == "file_chunk" || type == "file_end") {
-        handleFileTransfer(doc);
+        handleFileTransfer(doc, jsonString);  // ← Pass original string
     }
     else if (type == "ok" || type == "error") {
-        handleResponse(doc);
+        handleResponse(doc, jsonString);  // ← Pass original string
     }
 }
 
-void handleTelemetryUpdate(JsonDocument& doc) {
+// Updated handlers with original JSON string
+void handleTelemetryUpdate(JsonDocument& doc, String jsonString) {
     JsonObject data = doc["data"];
     
     telemetry.valid = true;
@@ -324,13 +325,11 @@ void handleTelemetryUpdate(JsonDocument& doc) {
     
     telemetry.last_update = millis();
     
-    // Serialize and broadcast to WebSocket clients
-    String json;                    // ← ADD THIS
-    serializeJson(doc, json);       // ← ADD THIS
-    ws.textAll(json);
+    // Use original JSON string (more efficient)
+    ws.textAll(jsonString);
 }
 
-void handleSatelliteUpdate(JsonDocument& doc) {
+void handleSatelliteUpdate(JsonDocument& doc, String jsonString) {
     satellites.clear();
     
     JsonArray sats = doc["satellites"];
@@ -345,39 +344,26 @@ void handleSatelliteUpdate(JsonDocument& doc) {
     
     last_sat_update = millis();
     
-    // Broadcast to WebSocket clients
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    ws.textAll(jsonString);
 }
 
-void handleFileList(JsonDocument& doc) {
-    // Forward to WebSocket clients
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+void handleFileList(JsonDocument& doc, String jsonString) {
+    ws.textAll(jsonString);
 }
 
-void handleFileTransfer(JsonDocument& doc) {
-    // Forward to WebSocket clients for handling
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+void handleFileTransfer(JsonDocument& doc, String jsonString) {
+    ws.textAll(jsonString);
 }
 
-void handleResponse(JsonDocument& doc) {
+void handleResponse(JsonDocument& doc, String jsonString) {
     String type = doc["type"];
     String message = doc["message"] | "";
     
     Serial.print("Response: ");
     Serial.println(message);
     
-    // Forward to WebSocket clients
-    String json;
-    serializeJson(doc, json);
-    ws.textAll(json);
+    ws.textAll(jsonString);
 }
-
 void sendCommandToPico(String json) {
     Serial.print("ESP → Pico: ");
     Serial.println(json);
@@ -472,7 +458,6 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
         }
     }
 }
-
 // ============================================================================
 // HTML Page
 // ============================================================================
