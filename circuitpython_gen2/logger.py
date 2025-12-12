@@ -335,7 +335,7 @@ class FileManager:
             return False
 
 # ============================================================================
-# JSON Protocol Handler
+# JSON Protocol Handler (FIXED)
 # ============================================================================
 
 class JSONProtocol:
@@ -349,81 +349,114 @@ class JSONProtocol:
     def process(self):
         """Check for incoming commands"""
         if self.uart.in_waiting:
-            data = self.uart.read(self.uart.in_waiting)
-            self.buffer += data.decode('utf-8', 'ignore')
-            
-            # Process complete JSON objects (newline delimited)
-            while '\n' in self.buffer:
-                line, self.buffer = self.buffer.split('\n', 1)
-                line = line.strip()
-                if line:
-                    try:
-                        cmd = json.loads(line)
-                        self.handle_command(cmd)
-                    except json.JSONDecodeError as e:
-                        print(f"JSON decode error: {e}")
+            try:
+                # Read available bytes
+                data = self.uart.read(self.uart.in_waiting)
+                
+                # Decode with error handling
+                try:
+                    decoded = data.decode('utf-8')
+                except UnicodeError:
+                    # Try with 'ignore' error handler
+                    decoded = data.decode('utf-8', 'ignore')
+                    print("Warning: Ignored invalid UTF-8 bytes")
+                
+                self.buffer += decoded
+                
+                # Process complete JSON objects (newline delimited)
+                while '\n' in self.buffer:
+                    line, self.buffer = self.buffer.split('\n', 1)
+                    line = line.strip()
+                    if line:
+                        self.handle_line(line)
+                        
+            except Exception as e:
+                print(f"Serial process error: {e}")
+                # Clear buffer on error
+                self.buffer = ""
+    
+    def handle_line(self, line):
+        """Process a single line of JSON"""
+        try:
+            cmd = json.loads(line)
+            self.handle_command(cmd)
+        except ValueError as e:
+            # JSON decode error
+            print(f"JSON decode error: {e}")
+            print(f"Invalid JSON: {line[:50]}...")  # Show first 50 chars
+        except Exception as e:
+            print(f"Line handling error: {e}")
     
     def handle_command(self, cmd):
         """Execute command"""
-        cmd_type = cmd.get("cmd", "")
-        
-        if cmd_type == "LIST":
-            self.send_file_list()
-        
-        elif cmd_type == "GET":
-            filename = cmd.get("file", "")
-            if filename:
-                self.send_file(filename)
-            else:
-                self.send_error("Missing file parameter")
-        
-        elif cmd_type == "DELETE":
-            filename = cmd.get("file", "")
-            if filename:
-                success = FileManager.delete_file(filename)
-                if success:
-                    self.send_response({"type": "ok", "message": "File deleted"})
+        try:
+            cmd_type = cmd.get("cmd", "")
+            
+            if cmd_type == "LIST":
+                self.send_file_list()
+            
+            elif cmd_type == "GET":
+                filename = cmd.get("file", "")
+                if filename:
+                    self.send_file(filename)
                 else:
-                    self.send_error("Delete failed")
-            else:
-                self.send_error("Missing file parameter")
-        
-        elif cmd_type == "START_SESSION":
-            driver = cmd.get("driver", "Unknown")
-            vin = cmd.get("vin", "Unknown")
-            filename = session.start(driver, vin)
-            self.send_response({
-                "type": "ok",
-                "message": "Session started",
-                "file": filename
-            })
-        
-        elif cmd_type == "STOP_SESSION":
-            if session.active:
-                filename = session.stop()
+                    self.send_error("Missing file parameter")
+            
+            elif cmd_type == "DELETE":
+                filename = cmd.get("file", "")
+                if filename:
+                    success = FileManager.delete_file(filename)
+                    if success:
+                        self.send_response({"type": "ok", "message": "File deleted"})
+                    else:
+                        self.send_error("Delete failed")
+                else:
+                    self.send_error("Missing file parameter")
+            
+            elif cmd_type == "START_SESSION":
+                driver = cmd.get("driver", "Unknown")
+                vin = cmd.get("vin", "Unknown")
+                filename = session.start(driver, vin)
                 self.send_response({
                     "type": "ok",
-                    "message": "Session stopped",
+                    "message": "Session started",
                     "file": filename
                 })
+            
+            elif cmd_type == "STOP_SESSION":
+                if session.active:
+                    filename = session.stop()
+                    self.send_response({
+                        "type": "ok",
+                        "message": "Session stopped",
+                        "file": filename
+                    })
+                else:
+                    self.send_error("No active session")
+            
+            elif cmd_type == "GET_SATELLITES":
+                self.send_satellites()
+            
             else:
-                self.send_error("No active session")
-        
-        elif cmd_type == "GET_SATELLITES":
-            self.send_satellites()
-        
-        else:
-            self.send_error(f"Unknown command: {cmd_type}")
+                print(f"Unknown command: {cmd_type}")
+                
+        except Exception as e:
+            print(f"Command handling error: {e}")
+            self.send_error(f"Error: {e}")
     
     def send_file_list(self):
         """Send list of session files"""
-        files = FileManager.list_files()
-        response = {
-            "type": "files",
-            "count": len(files),
-            "files": files
-        }
-        self.send_json(response)
+        try:
+            files = FileManager.list_files()
+            response = {
+                "type": "files",
+                "count": len(files),
+                "files": files
+            }
+            self.send_json(response)
+        except Exception as e:
+            print(f"File list error: {e}")
+            self.send_error(f"List error: {e}")
     
     def send_file(self, filename):
         """Send file contents in chunks"""
@@ -464,12 +497,19 @@ class JSONProtocol:
                 "chunks": chunk_num
             })
             
-        except Exception as e:
+        except OSError as e:
+            print(f"File error: {e}")
             self.send_error(f"File error: {e}")
+        except Exception as e:
+            print(f"Send file error: {e}")
+            self.send_error(f"Error: {e}")
     
     def send_satellites(self):
         """Send satellite data"""
-        self.send_json(sat_tracker.get_json())
+        try:
+            self.send_json(sat_tracker.get_json())
+        except Exception as e:
+            print(f"Satellite send error: {e}")
     
     def send_response(self, response):
         """Send generic response"""
@@ -477,19 +517,21 @@ class JSONProtocol:
     
     def send_error(self, message):
         """Send error response"""
-        self.send_json({
-            "type": "error",
-            "message": message
-        })
+        try:
+            self.send_json({
+                "type": "error",
+                "message": str(message)
+            })
+        except Exception as e:
+            print(f"Error sending error: {e}")
     
     def send_json(self, obj):
         """Send JSON object"""
         try:
             json_str = json.dumps(obj) + "\n"
-            self.uart.write(json_str.encode())
+            self.uart.write(json_str.encode('utf-8'))
         except Exception as e:
-            print(f"Error sending JSON: {e}")
-
+            print(f"JSON send error: {e}")
 protocol = JSONProtocol(esp_uart)
 
 # ============================================================================
