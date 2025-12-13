@@ -58,7 +58,7 @@ display_bus = i2cdisplaybus.I2CDisplayBus(i2c, device_address=0x3C)
 display = adafruit_displayio_ssd1306.SSD1306(display_bus, width=128, height=64)
 
 # UART to ESP-01S (SoftwareSerial compatible)
-esp_uart = busio.UART(board.GP0, board.GP1, baudrate=9600, timeout=0.1)
+esp_uart = busio.UART(board.GP0, board.GP1, baudrate=115200, timeout=0.1)
 
 # RTC
 rtc_clock = rtc.RTC()
@@ -367,6 +367,7 @@ class JSONProtocol:
                 while '\n' in self.buffer:
                     line, self.buffer = self.buffer.split('\n', 1)
                     line = line.strip()
+		    print("{line}\n")
                     if line:
                         self.handle_line(line)
                         
@@ -704,6 +705,7 @@ try:
         # Send telemetry (1Hz)
         if now - last_telemetry_send > 1.0:
             last_telemetry_send = now
+	    print(f"{data}\n")
             send_telemetry(data)
         
         # Send satellites (every 120s)
