@@ -8,6 +8,7 @@ import board
 import busio
 import time
 import digitalio
+import neopixel
 import adafruit_lis3dh
 import adafruit_gps
 import displayio
@@ -26,6 +27,33 @@ import math
 # ============================================================================
 
 print("OpenPonyLogger v2.1 - Initializing...")
+
+# Heartbeat LED (GP25)
+heartbeat = digitalio.DigitalInOut(board.LED)
+heartbeat.direction = digitalio.Direction.OUTPUT
+heartbeat.value = False
+heartbeat_state = False
+heartbeat_last_toggle = 0
+
+# NeoPixel Jewel (GP22)
+pixel = neopixel.NeoPixel(board.GP22, 7, brightness=0.3, auto_write=False)
+
+def set_pixel_color(index, color):
+    """Set pixel color (R, G, B)"""
+    pixel[index] = color
+    pixel.show()
+
+def christmas_tree():
+    """Startup animation - christmas tree effect"""
+    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
+    for _ in range(3):  # 3 cycles
+        for i in range(7):
+            pixel[i] = colors[i % len(colors)]
+            pixel.show()
+            time.sleep(0.05)
+        pixel.fill((0, 0, 0))
+        pixel.show()
+        time.sleep(0.1)
 
 # I2C (Accelerometer + OLED)
 i2c = board.STEMMA_I2C()
@@ -67,11 +95,41 @@ rtc_synced = False
 print("✓ Hardware initialized")
 
 # ============================================================================
-# Display Setup
+# Splash Screen
 # ============================================================================
 
+def show_splash(status_text="Initializing..."):
+    """Display OpenPony splash screen"""
+    from adafruit_display_text.bitmap_label import Label
+    from adafruit_bitmap_font import bitmap_font
+    
+    splash_group = displayio.Group()
+    
+    # Title (Large font)
+    title = label.Label(terminalio.FONT, text="OpenPonyLogger", color=0xFFFFFF, x=5, y=8, scale=2)
+    splash_group.append(title)
+    
+    # Status (middle)
+    status = label.Label(terminalio.FONT, text=status_text, color=0xFFFFFF, x=5, y=35)
+    splash_group.append(status)
+    
+    # Copyright (bottom)
+    copyright = label.Label(terminalio.FONT, text="(c) John Orthoefer 2025", color=0xFFFFFF, x=0, y=57)
+    splash_group.append(copyright)
+    
+    display.root_group = splash_group
+    return splash_group, status
+
+# ============================================================================
+# Display Setup
+# ============================================================================
+# Show splash during init
+christmas_tree()
+splash_group, splash_status = show_splash("Booting hardware...")
+time.sleep(1.5)
+
+# Main display setup
 splash = displayio.Group()
-display.root_group = splash
 
 line1 = label.Label(terminalio.FONT, text="--:--:-- NoFix [  ]", color=0xFFFFFF, x=0, y=5)
 line2 = label.Label(terminalio.FONT, text="--- --'-- N --- --'-- W", color=0xFFFFFF, x=0, y=17)
@@ -81,6 +139,9 @@ line5 = label.Label(terminalio.FONT, text="SD: --h --m remain", color=0xFFFFFF, 
 
 for line in [line1, line2, line3, line4, line5]:
     splash.append(line)
+
+splash_status.text = "Display ready..."
+time.sleep(0.3)
 
 # ============================================================================
 # Utility Functions
@@ -106,7 +167,7 @@ def format_dms(decimal_degrees, is_latitude=True):
     minutes = int(minutes_decimal)
     seconds = int((minutes_decimal - minutes) * 60)
     
-    return f"{degrees:3d}°{minutes:2d}'{seconds:2d}\"{hemisphere}"
+    return f"{degrees:3d} {minutes:2d}'{seconds:2d}\"{hemisphere}"
 
 def hdop_to_bars(hdop):
     """Convert HDOP to signal strength bars (0-3)"""
@@ -607,6 +668,74 @@ def read_sensors():
     }
 
 # ============================================================================
+# NeoPixel G-Force Display
+# ============================================================================
+
+def update_neopixels(data):
+    """Update NeoPixel Jewel based on G-force and system status"""
+    gx = data['g']['x']
+    gy = data['g']['y']
+    g_total = data['g']['total']
+    
+    # Determine master status
+    # Green: GPS fix + logging
+    # Yellow: GPS fix OR logging (degraded)
+    # Red: No GPS fix AND no logging
+    if data['gps']['fix'] != "NoFix" and session.active:
+        status_color = (0, 255, 0)  # Green
+        breathe = True
+    elif data['gps']['fix'] != "NoFix" or session.active:
+        status_color = (255, 255, 0)  # Yellow
+        breathe = False
+    else:
+        status_color = (255, 0, 0)  # Red
+        breathe = False
+    
+    # Center LED (index 0) - Master status
+    if breathe:
+        # Sinusoidal breathing from 20% to 80%
+        t = time.monotonic()
+        intensity = 0.2 + 0.3 * (1 + math.sin(t * 2 * math.pi / 2.0))  # 2 second period
+        pixel[0] = tuple(int(c * intensity) for c in status_color)
+    else:
+        # Flashing yellow or solid red
+        if status_color == (255, 255, 0):  # Yellow flash
+            flash_on = int(time.monotonic() * 2) % 2  # 0.5s on, 0.5s off
+            pixel[0] = status_color if flash_on else (0, 0, 0)
+        else:  # Solid red
+            pixel[0] = status_color
+    
+    # Map G-forces to LEDs (vertical strip: 1, 2, 3)
+    # Top (1) - forward accel (positive gy)
+    # Middle (2) - lateral right (positive gx)
+    # Bottom (3) - braking (negative gy)
+    
+    def g_to_color(g_value, max_g=1.5):
+        """Map G-force to color intensity"""
+        intensity = min(abs(g_value) / max_g, 1.0)
+        if g_value > 0:
+            return (0, int(255 * intensity), 0)  # Green for positive
+        else:
+            return (int(255 * intensity), 0, 0)  # Red for negative
+    
+    pixel[1] = g_to_color(gy)   # Forward/brake (top vertical)
+    pixel[2] = g_to_color(gx)   # Lateral (middle vertical)
+    pixel[3] = g_to_color(-gy)  # Brake/forward (bottom vertical)
+    
+    # Tire positions (4, 5, 6, 7) - based on lateral + longitudinal
+    # Simple visualization: show total G on all corners
+    corner_intensity = min(g_total / 2.0, 1.0)
+    corner_color = (
+        int(255 * corner_intensity * abs(gx) / (abs(gx) + abs(gy) + 0.01)),
+        int(255 * corner_intensity * abs(gy) / (abs(gx) + abs(gy) + 0.01)),
+        0
+    )
+    for i in range(4, 7):
+        pixel[i] = corner_color
+    
+    pixel.show()
+
+# ============================================================================
 # Display Update
 # ============================================================================
 
@@ -626,10 +755,12 @@ def update_display(data):
     
     line1.text = f"{time_str} {fix_str:5s} {bars}"
     
-    # Line 2: {DDD° MM:SS N/S DDD° MM:SS E/W}
-    lat_dms = format_dms(data['gps']['lat'], is_latitude=True)
-    lon_dms = format_dms(data['gps']['lon'], is_latitude=False)
-    line2.text = f"{lat_dms} {lon_dms}"
+#jco#    # Line 2: {DDD° MM:SS N/S DDD° MM:SS E/W}
+#jco#    lat_dms = format_dms(data['gps']['lat'], is_latitude=True)
+#jco#    lon_dms = format_dms(data['gps']['lon'], is_latitude=False)
+#jco#    line2.text = f"{lat_dms} {lon_dms}"
+    # Line 2: Lat/Long
+    line2.text = f"{data['gps']['lat']} {data['gps']['lon']}"
     
     # Line 3: {MPH} {Total G Force}
     line3.text = f"{data['gps']['speed']:3.0f}MPH  {data['g']['total']:.2f}g"
@@ -637,8 +768,9 @@ def update_display(data):
     # Line 4: {Log file name} {File record time}
     if session.active:
         duration = format_time_hms(session.get_duration())
-        short_name = session.filename[:8] if session.filename else "NoLog"
-        line4.text = f"{short_name} {duration}"
+        no_ext = (session.filename.split("."))[0]
+        short_name = no_ext[9:] if session.filename else "NoLog"
+        line4.text = f"Run:{short_name} {duration}"
     else:
         line4.text = "NoLog 00:00:00"
     
@@ -672,6 +804,9 @@ def send_telemetry(data):
 # Main Loop
 # ============================================================================
 
+splash_status.text = "Starting session..."
+time.sleep(0.5)
+
 # Auto-start logging
 session.start("John", "1ZVBP8AM5E5123456")
 
@@ -679,9 +814,14 @@ print("\n" + "="*50)
 print("OpenPonyLogger v2.1 Running")
 print("="*50)
 
+# Switch to main display
+display.root_group = splash
+
 last_display_update = 0
 last_telemetry_send = 0
 last_satellite_send = 0
+last_neopixel_update = 0
+heartbeat_last_toggle = 0
 
 try:
     while True:
@@ -695,7 +835,18 @@ try:
         if session.active:
             session.log(data)
         
+        # Update heartbeat LED (1Hz, 100ms on)
         now = time.monotonic()
+        if now - heartbeat_last_toggle >= 1.0:
+            heartbeat.value = True
+            heartbeat_last_toggle = now
+        elif now - heartbeat_last_toggle >= 0.1:
+            heartbeat.value = False
+        
+        # Update NeoPixels (10Hz)
+        if now - last_neopixel_update > 0.1:
+            last_neopixel_update = now
+            update_neopixels(data)
         
         # Update display (5Hz)
         if now - last_display_update > 0.2:
@@ -705,7 +856,7 @@ try:
         # Send telemetry (1Hz)
         if now - last_telemetry_send > 1.0:
             last_telemetry_send = now
-	    print(f"{data}\n")
+            print(f"{data}\n")
             send_telemetry(data)
         
         # Send satellites (every 120s)
