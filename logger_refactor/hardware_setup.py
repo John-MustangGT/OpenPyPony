@@ -15,6 +15,8 @@ import storage
 import sdcardio
 import rtc
 from config import config
+import time
+import json
 
 print("OpenPonyLogger v2.1 - Initializing...")
 
@@ -68,7 +70,36 @@ display_bus = i2cdisplaybus.I2CDisplayBus(i2c, device_address=0x3C)
 display = adafruit_displayio_ssd1306.SSD1306(display_bus, width=128, height=64)
 
 # UART to ESP-01S (SoftwareSerial compatible)
+# ESP-01s Reset
+esp_reset_pin = digitalio.DigitalInOut(board.GP6)
+esp_reset_pin.direction = digitalio.Direction.OUTPUT
+esp_reset_pin.value = True
+time.sleep(0.1)
+esp_reset_pin.value = False
+time.sleep(0.05)
+esp_reset_pin.value = True
+print("ESP-01s reset signal sent.")
+
+# Wait for ESP-01s to be ready
 esp_uart = busio.UART(board.GP0, board.GP1, baudrate=115200, timeout=0.1)
+start_time = time.monotonic()
+esp_ready = False
+while time.monotonic() - start_time < 5:
+    line = esp_uart.readline()
+    if line:
+        try:
+            line_str = line.decode('utf-8').strip()
+            if line_str:
+                message = json.loads(line_str)
+                if message.get("type") == "esp_ready":
+                    print("ESP-01s is ready.")
+                    esp_ready = True
+                    break
+        except (ValueError, TypeError, UnicodeError):
+            pass # Ignore non-JSON lines
+
+if not esp_ready:
+    print("Error: ESP-01s did not send ready message in time.")
 
 # RTC
 rtc_clock = rtc.RTC()
