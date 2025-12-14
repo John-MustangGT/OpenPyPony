@@ -17,13 +17,8 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 - ✅ State machine task scheduler
 - ✅ Buffered SD writes for performance
 
-**In Progress:**
-- 🔧 GPS module integration (ATGM336H)
-- 🔧 PPS timing synchronization
-
 **Planned:**
 - ⏳ Bluetooth OBD-II integration
-- ⏳ Port to C/C++ for dual-core RP2350
 - ⏳ Advanced web UI with gauges
 
 ---
@@ -34,31 +29,30 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 
 | Component | Part | Purpose | Status |
 |-----------|------|---------|--------|
-| Microcontroller | Raspberry Pi Pico 2W (RP2350) | Main processor with WiFi | ✅ Working |
+| Microcontroller | Raspberry Pi Pico 2W (RP2350) | Main processor | ✅ Working |
+| Microcontroller | ESP-01s | Wifi processor | ✅ Working |
 | Accelerometer | LIS3DH (I2C) | 3-axis G-force measurement | ✅ Working |
-| GPS | ATGM336H (UART) | Position, speed, timing | 🔧 Integrating |
+| GPS | ATGM336H (UART) | Position, speed, timing | ✅ Working |
 | Display | SSD1306 OLED 128x64 (I2C) | Live telemetry display | ✅ Working |
 | Storage | PiCowbell Adalogger + SD card | Data logging | ✅ Working |
+| Lights | Neopixel Jewel | Flashy | ✅ Working |
 | OBD-II | VGate iCar Pro (BLE) | Engine data (future) | ⏳ Planned |
 
 ### Pinout
 ```
 Raspberry Pi Pico 2W GPIO Assignment:
 
-GP0  - GPS TX (UART0)
-GP1  - GPS RX (UART0)
+GP0  - ESP-01 TX (UART0)
+GP1  - ESP-01 RX (UART0)
 GP2  - GPS PPS (1Hz timing pulse)
-GP8  - I2C SDA (LIS3DH + OLED)
-GP9  - I2C SCL (LIS3DH + OLED)
+GP8  - I2C SDA (LIS3DH + OLED)/STEMMA
+GP9  - I2C SCL (LIS3DH + OLED)/STEMMA
 GP12 - SD MISO (SPI1)
 GP13 - SD CS
 GP14 - SD SCK
 GP15 - SD MOSI
-GP16 - (Reserved)
-GP17 - (Reserved)
-GP18 - (Reserved)
-GP19 - (Reserved)
-```
+GP22 - Neopixel 7 element jewel
+GP25 - Board LED flashing
 
 ### Power Consumption
 
@@ -82,8 +76,6 @@ Accelerometer        100ms       Read LIS3DH sensor
 Display              200ms       Update OLED
 SD Logger            100ms       Buffer & flush data
 Status               1000ms      Console updates
-WebServer            10ms        HTTP request polling
-WiFi Monitor         5000ms      Connection status
 ```
 
 ### Data Flow
@@ -100,6 +92,7 @@ WiFi Monitor         5000ms      Connection status
        ├─────────────► OLED Display (5Hz)
        ├─────────────► Web Interface (JSON API)
        └─────────────► SD Card Logger (buffered)
+       └─────────────► ESP-01s for Web app
 ```
 
 ### File Structure
@@ -119,14 +112,12 @@ OpenPyPony/
 
 ### Data Format
 
-**CSV Log Files:** `/sd/accel_log_<timestamp>.csv`
+**CSV Log Files:** `/sd/session_{value}.csv`
 ```csv
 timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total
 0,-9.350,-0.280,-2.000,-0.95,-0.03,-0.20,0.97
 100,-9.340,-0.290,-2.010,-0.95,-0.03,-0.20,0.97
 ```
-
-**Future:** GPS data will be added as additional columns
 
 ---
 
@@ -139,7 +130,6 @@ timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total
   - `adafruit_lis3dh`
   - `adafruit_displayio_ssd1306`
   - `sdcardio` (built-in)
-  - `adafruit_httpserver`
 
 ### Installation
 
@@ -198,8 +188,8 @@ Access at `http://192.168.4.1` when connected to OpenPonyLogger WiFi:
 - [x] LIS3DH Accelerometer
 - [x] OLED Display
 - [x] SD Card Logging
-- [x] WiFi AP + Web Server
-- [ ] GPS Module (in progress)
+- [x] GPS Module
+- [x] WiFi AP + Web Server via esp-01s
 - [ ] GPS PPS timing
 - [ ] Bluetooth OBD-II (optional)
 
