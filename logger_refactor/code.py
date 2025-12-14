@@ -48,6 +48,7 @@ def main():
     print("OpenPonyLogger v2.1 Running")
     print("="*50)
 
+    last_rtc_update = 0
     last_display_update = 0
     last_telemetry_send = 0
     last_satellite_send = 0
@@ -74,13 +75,10 @@ def main():
                 "gps": gps.read()
             }
             
-            # Sync RTC
-            rtc.sync_from_gps(gps.gps)
-
             # Log to SD card
             if session.active:
                 session.log(sensor_data)
-            
+
             # Update heartbeat LED (1Hz, 100ms on)
             now = time.monotonic()
             if now - heartbeat_last_toggle >= 1.0:
@@ -88,6 +86,11 @@ def main():
                 heartbeat_last_toggle = now
             elif now - heartbeat_last_toggle >= 0.1:
                 hw.heartbeat.value = False
+
+            # only sync RTC every minute
+            if now - last_rtc_update >= 60.0 and hw.gps.has_fix:
+                last_rtc_update = now
+                rtc.sync_from_gps(gps.gps)
             
             # Update NeoPixels (10Hz)
             if now - last_neopixel_update > 0.1:
@@ -102,13 +105,21 @@ def main():
             # Send telemetry (1Hz)
             if serial_debug and now - last_telemetry_send > 1.0:
                 last_telemetry_send = now
-                print(f"{sensor_data}\n")
+                if not hw.gps.timestamp_utc:
+                    print("No GPS Time")
+                else:
+                    def _format_datetime(datetime):
+                        date_part = f"{datetime.tm_mon:02}/{datetime.tm_mday:02}/{datetime.tm_year}"
+                        time_part = f"{datetime.tm_hour:02}:{datetime.tm_min:02}:{datetime.tm_sec:02}"
+                        return f"{date_part} {time_part}"
+                    print(f"Fix timestamp: {_format_datetime(hw.gps.timestamp_utc)}")
+                print(f"{sensor_data}")
                 protocol.send_telemetry(sensor_data)
             
             # Send satellites (every 5s)
             if serial_debug and now - last_satellite_send > 5.0:
                 last_satellite_send = now
-                print(f"{gps.get_satellites_json()}\n")
+                print(f"{gps.get_satellites_json()}")
                 protocol.send_satellites()
 
             if serial_debug and (now * 1000) - last_status_print > status_interval_ms:

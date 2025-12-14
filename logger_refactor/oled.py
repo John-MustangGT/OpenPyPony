@@ -64,6 +64,7 @@ class OLED:
         if rtc_handler.synced:
             now = time.localtime()
             time_str = f"{now.tm_hour:02d}:{now.tm_min:02d}:{now.tm_sec:02d}"
+            # print(f"{time_str}")
         else:
             time_str = "--:--:--"
         
