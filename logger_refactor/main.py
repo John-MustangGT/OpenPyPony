@@ -12,6 +12,7 @@ from storage import Session, FileManager
 from oled import OLED
 from serial_com import JSONProtocol
 from neopixel_handler import NeoPixelHandler
+import watchdog
 
 def main():
     # Initialize components
@@ -22,6 +23,11 @@ def main():
     oled = OLED(hw.display)
     protocol = JSONProtocol(hw.esp_uart, session, gps)
     neopixel = NeoPixelHandler(hw.pixel)
+
+    # Setup watchdog
+    watchdog.timeout = 8
+    watchdog.mode = watchdog.WatchDogMode.RESET
+    watchdog.feed()
 
     # Startup sequence
     neopixel.christmas_tree()
@@ -53,6 +59,7 @@ def main():
 
     try:
         while True:
+            watchdog.feed()
             # Process serial commands
             protocol.process()
             
