@@ -39,4 +39,4 @@ class Config:
         value = self.get(key, str(default)).lower()
         return value == "true"
 
-config = Config("/usr/lib/gemini-cli/open_pony_logger/settings.toml")
+config = Config("/settings.toml")

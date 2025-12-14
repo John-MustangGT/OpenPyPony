@@ -1,5 +1,5 @@
 """
-storage.py - SD card, session and file management for OpenPonyLogger
+sdcard.py - SD card, session and file management for OpenPonyLogger
 """
 
 import os

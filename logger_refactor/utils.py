@@ -22,7 +22,7 @@ def format_dms(decimal_degrees, is_latitude=True):
     minutes = int(minutes_decimal)
     seconds = int((minutes_decimal - minutes) * 60)
     
-    return f"{degrees:3d} {minutes:2d}'{seconds:2d}"{hemisphere}"
+    return f"{degrees:3d} {minutes:2d}'{seconds:2d}\"{hemisphere}"
 
 def hdop_to_bars(hdop):
     """Convert HDOP to signal strength bars (0-3)"""

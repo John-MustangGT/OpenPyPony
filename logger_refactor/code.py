@@ -8,11 +8,12 @@ from config import config
 from accelerometer import Accelerometer
 from gps import GPS
 from rtc_handler import RTCHandler
-from storage import Session, FileManager
+from sdcard import Session, FileManager
 from oled import OLED
 from serial_com import JSONProtocol
 from neopixel_handler import NeoPixelHandler
-import watchdog
+from microcontroller import watchdog
+from watchdog import WatchDogMode
 
 def main():
     # Initialize components
@@ -26,7 +27,7 @@ def main():
 
     # Setup watchdog
     watchdog.timeout = 8
-    watchdog.mode = watchdog.WatchDogMode.RESET
+    watchdog.mode = WatchDogMode.RESET
     watchdog.feed()
 
     # Startup sequence

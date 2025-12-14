@@ -4,7 +4,6 @@ serial_com.py - JSON Protocol Handler for OpenPonyLogger
 
 import json
 import time
-from storage import FileManager
 
 class JSONProtocol:
     """Handle JSON commands from ESP-01S"""
