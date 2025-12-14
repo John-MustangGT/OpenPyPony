@@ -7,6 +7,8 @@ import time
 import storage
 import sdcardio
 
+from config import config
+
 class FileManager:
     """Manage session files"""
     
@@ -77,6 +79,7 @@ class Session:
         self.driver_name = "Unknown"
         self.car_vin = "Unknown"
         self.rtc_handler = rtc_handler
+        self.log_flush_size = config.get_int("LOG_FLUSH_SIZE", 50)
         
     def start(self, driver="Unknown", vin="Unknown"):
         """Start new recording session"""
@@ -119,8 +122,8 @@ class Session:
         self.bytes_written += len(line)
         self.sample_count += 1
         
-        # Flush every 50 samples
-        if self.sample_count % 50 == 0:
+        # Flush every N samples
+        if self.sample_count % self.log_flush_size == 0:
             self.file.flush()
     
     def stop(self):

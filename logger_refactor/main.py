@@ -4,6 +4,7 @@ main.py - OpenPonyLogger Pico Firmware v2.1 (Refactored)
 
 import time
 import hardware_setup as hw
+from config import config
 from accelerometer import Accelerometer
 from gps import GPS
 from rtc_handler import RTCHandler
@@ -25,14 +26,16 @@ def main():
     # Startup sequence
     neopixel.christmas_tree()
     oled.show_splash("Booting hardware...")
-    time.sleep(1.5)
+    time.sleep(config.get_float("SPLASH_DURATION", 1.5))
     oled.setup_main_display()
     
     oled.set_splash_status("Starting session...")
     time.sleep(0.5)
 
     # Auto-start logging
-    session.start("John", "1ZVBP8AM5E5123456")
+    driver_name = config.get("DRIVER_NAME", "John")
+    vehicle_id = config.get("VEHICLE_ID", "1ZVBP8AM5E5123456")
+    session.start(driver_name, vehicle_id)
 
     print("\n" + "="*50)
     print("OpenPonyLogger v2.1 Running")
@@ -43,6 +46,10 @@ def main():
     last_satellite_send = 0
     last_neopixel_update = 0
     heartbeat_last_toggle = 0
+    last_status_print = 0
+
+    serial_debug = config.get_bool("SERIAL_DEBUG", True)
+    status_interval_ms = config.get_int("STATUS_INTERVAL", 5000)
 
     try:
         while True:
@@ -85,16 +92,20 @@ def main():
                 oled.update(sensor_data, session, rtc)
             
             # Send telemetry (1Hz)
-            if now - last_telemetry_send > 1.0:
+            if serial_debug and now - last_telemetry_send > 1.0:
                 last_telemetry_send = now
                 print(f"{sensor_data}\n")
                 protocol.send_telemetry(sensor_data)
             
             # Send satellites (every 5s)
-            if now - last_satellite_send > 5.0:
+            if serial_debug and now - last_satellite_send > 5.0:
                 last_satellite_send = now
                 print(f"{gps.get_satellites_json()}\n")
                 protocol.send_satellites()
+
+            if serial_debug and (now * 1000) - last_status_print > status_interval_ms:
+                last_status_print = now * 1000
+                print(f"Status: {sensor_data}")
             
             time.sleep(0.01)  # 100Hz main loop
             
