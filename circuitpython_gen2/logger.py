@@ -45,15 +45,15 @@ def set_pixel_color(index, color):
 
 def christmas_tree():
     """Startup animation - christmas tree effect"""
-    colors = [(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 0)]
-    for _ in range(3):  # 3 cycles
+    colors = [(255, 191, 0), (255, 191, 0), (255, 191, 0), (0, 255, 0)]
+    for c in colors:
         for i in range(7):
-            pixel[i] = colors[i % len(colors)]
+            pixel[i] = c
             pixel.show()
-            time.sleep(0.05)
-        pixel.fill((0, 0, 0))
+            time.sleep(0.1)
         pixel.show()
-        time.sleep(0.1)
+        time.sleep(0.5)
+        pixel.fill((0, 0, 0))
 
 # I2C (Accelerometer + OLED)
 i2c = board.STEMMA_I2C()
@@ -352,6 +352,7 @@ class FileManager:
                     filepath = f"/sd/{filename}"
                     stat = os.stat(filepath)
                     size = stat[6]
+                    mtime = stat[8]
                     
                     # Try to read metadata from file
                     driver = "Unknown"
@@ -371,12 +372,13 @@ class FileManager:
                     files.append({
                         "file": filename,
                         "size": size,
+                        "mtime": mtime,
                         "driver": driver,
                         "vin": vin
                     })
             
             # Sort by filename (newest first)
-            files.sort(key=lambda x: x["file"], reverse=True)
+            files.sort(key=lambda x: x["mtime"], reverse=True)
             
         except Exception as e:
             print(f"Error listing files: {e}")
@@ -509,7 +511,7 @@ class JSONProtocol:
     def send_file_list(self):
         """Send list of session files"""
         try:
-            files = FileManager.list_files()
+            files = FileManager.list_files()[-5:]
             response = {
                 "type": "files",
                 "count": len(files),
@@ -668,13 +670,59 @@ def read_sensors():
     }
 
 # ============================================================================
-# NeoPixel G-Force Display
+# NeoPixel Jewel G-Force Display - Physical Layout Mapping
 # ============================================================================
+# Physical PCB orientation (silkscreen labels):
+#        OUT (forward accel)
+#    ?       ?
+# IN    0    GND  (0 = center, master status)
+#    ?       ?
+#        PWR (braking/rear)
+#
+# LED Index mapping (need to verify with actual board):
+# Assuming clockwise from OUT:
+# - LED 0: Center (above "R" in PWR) = Master status
+# - LED 1: OUT position (top) = Forward acceleration indicator
+# - LED 2: Between OUT and GND = Right-front tire
+# - LED 3: GND position (right) = Right side indicator  
+# - LED 4: Between GND and PWR = Right-rear tire
+# - LED 5: PWR position (bottom) = Braking/rear indicator
+# - LED 6: Between PWR and IN = Left-rear tire
+# - (LED 7 would be IN, but Jewel only has 7 total including center)
+#
+# Corrected for 0-6 indexing:
+# 0=center, 1=OUT(top), 2=right-front, 3=GND(right), 4=right-rear, 
+# 5=PWR(bottom), 6=left-rear... wait, we're missing one.
+#
+# Let me re-map for actual 7-LED jewel (0-6):
+# 0 = Center
+# 1 = Position 1 (clockwise from top)
+# 2 = Position 2
+# 3 = Position 3
+# 4 = Position 4
+# 5 = Position 5
+# 6 = Position 6
+#
+# Oriented with OUT at top (12 o'clock):
+# - LED 0: Center = Master status
+# - LED 1: OUT (~12 o'clock) = Forward accel
+# - LED 2: ~2 o'clock = Right-front tire
+# - LED 3: GND (~4 o'clock) = Right lateral
+# - LED 4: ~6 o'clock = Right-rear tire  
+# - LED 5: PWR (~8 o'clock) = Braking/rear
+# - LED 6: ~10 o'clock = Left-rear tire
+# - IN would be at ~10-11 o'clock (left-front), overlaps with LED 6 area
 
 def update_neopixels(data):
-    """Update NeoPixel Jewel based on G-force and system status"""
+    """
+    Update NeoPixel Jewel based on G-force and system status
+    
+    Physical orientation: OUT=forward, PWR=rear, GND=right, IN=left
+    Center LED shows master status, outer 6 show G-forces and tire loads
+    """
     gx = data['g']['x']
     gy = data['g']['y']
+    gz = data['g']['z']
     g_total = data['g']['total']
     
     # Determine master status
@@ -691,11 +739,11 @@ def update_neopixels(data):
         status_color = (255, 0, 0)  # Red
         breathe = False
     
-    # Center LED (index 0) - Master status
+    # LED 0: Center - Master status with breathing/flashing
     if breathe:
         # Sinusoidal breathing from 20% to 80%
         t = time.monotonic()
-        intensity = 0.2 + 0.3 * (1 + math.sin(t * 2 * math.pi / 2.0))  # 2 second period
+        intensity = 0.2 + 0.3 * (1 + math.sin(t/6 * math.pi))  # 2 second period
         pixel[0] = tuple(int(c * intensity) for c in status_color)
     else:
         # Flashing yellow or solid red
@@ -705,33 +753,84 @@ def update_neopixels(data):
         else:  # Solid red
             pixel[0] = status_color
     
-    # Map G-forces to LEDs (vertical strip: 1, 2, 3)
-    # Top (1) - forward accel (positive gy)
-    # Middle (2) - lateral right (positive gx)
-    # Bottom (3) - braking (negative gy)
-    
     def g_to_color(g_value, max_g=1.5):
-        """Map G-force to color intensity"""
+        """Map G-force to color: green=accel, red=decel, brightness=magnitude"""
         intensity = min(abs(g_value) / max_g, 1.0)
-        if g_value > 0:
+        if g_value > 0.1:
             return (0, int(255 * intensity), 0)  # Green for positive
-        else:
+        elif g_value < 0.1:
             return (int(255 * intensity), 0, 0)  # Red for negative
+        else:
+            return (0, 0, 0)  # Standing
     
-    pixel[1] = g_to_color(gy)   # Forward/brake (top vertical)
-    pixel[2] = g_to_color(gx)   # Lateral (middle vertical)
-    pixel[3] = g_to_color(-gy)  # Brake/forward (bottom vertical)
+    def tire_load_color(gx, gy, position):
+        """
+        Calculate tire load color based on weight transfer
+        Position: 'rf', 'rr', 'lf', 'lr'
+        
+        Weight transfer:
+        - Braking: weight shifts forward
+        - Acceleration: weight shifts rear
+        - Right turn: weight shifts left
+        - Left turn: weight shifts right
+        """
+        # Base vertical load (assume 0.25g per tire at rest)
+        vertical_load = 0.25
+        
+        # Longitudinal transfer (gy)
+        if position in ['rf', 'lf']:  # Front tires
+            vertical_load += -gy * 0.3  # Braking adds load to front
+        else:  # Rear tires
+            vertical_load += gy * 0.3   # Acceleration adds load to rear
+        
+        # Lateral transfer (gx)
+        if position in ['rf', 'rr']:  # Right tires
+            vertical_load += -gx * 0.3  # Left turn adds load to right
+        else:  # Left tires
+            vertical_load += gx * 0.3   # Right turn adds load to left
+        
+        # Clamp and map to color
+        vertical_load = max(0, min(vertical_load, 1.5))
+        intensity = abs(vertical_load)
+	##jco##print(f"{position} x:{gx} y:{gy} vLoad:{vertical_load} i:{intensity}\n")
+        
+        # Color from blue (low load) to yellow (medium) to red (high)
+        if abs(gx) < 0.1 and abs(gy) < 0.1:
+            # off
+            r = 0
+            g = 0
+            b = 0
+        elif intensity < 0.5:
+            # Blue to cyan to green
+            r = 0
+            g = int(intensity * 2 * 255)
+            b = int((1 - intensity * 2) * 255)
+        else:
+            # Green to yellow to red
+            r = int((intensity - 0.5) * 2 * 255)
+            g = 255
+            b = 0
+        
+        return (r, g, b)
+     
+    # LED 1: OUT (top) - Forward acceleration indicator
+    pixel[1] = g_to_color(gy)
+
+    # LED 2: Right-front tire load
+    pixel[2] = tire_load_color(gx, gy, 'rf')
     
-    # Tire positions (4, 5, 6, 7) - based on lateral + longitudinal
-    # Simple visualization: show total G on all corners
-    corner_intensity = min(g_total / 2.0, 1.0)
-    corner_color = (
-        int(255 * corner_intensity * abs(gx) / (abs(gx) + abs(gy) + 0.01)),
-        int(255 * corner_intensity * abs(gy) / (abs(gx) + abs(gy) + 0.01)),
-        0
-    )
-    for i in range(4, 7):
-        pixel[i] = corner_color
+    # LED 3: Right-rear tire load
+    pixel[3] = tire_load_color(gx, gy, 'rr')
+    
+    # LED 4: Braking indicator
+    pixel[4] = g_to_color(gx)
+    
+    # LED 5: Left-rear tire load
+    pixel[5] = tire_load_color(gx, gy, 'lr')
+    
+    # LED 6: Left-rear tire load (also represents left-front area)
+    # Average left side loading
+    pixel[6] = tire_load_color(gx, gy, 'lf')
     
     pixel.show()
 
@@ -859,9 +958,10 @@ try:
             print(f"{data}\n")
             send_telemetry(data)
         
-        # Send satellites (every 120s)
-        if now - last_satellite_send > 120.0:
+        # Send satellites (every 5s)
+        if now - last_satellite_send > 5.0:
             last_satellite_send = now
+            print(f"{sat_tracker.get_json()}\n")
             protocol.send_satellites()
         
         time.sleep(0.01)  # 100Hz main loop
