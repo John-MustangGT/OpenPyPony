@@ -4,6 +4,11 @@
 
 OpenPyPony is a low-cost, professional-grade data acquisition system built for the 2014 Ford Mustang GT "Ciara". This CircuitPython prototype validates hardware and software architecture before porting to C/C++ for production use.
 
+### Goals
+- OpenSource, MIT Licsense
+- Commodity hardware
+- Competitive with Commercial Solutions
+
 ---
 
 ## Project Status: Alpha v0.1
@@ -27,38 +32,16 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 
 ### Bill of Materials
 
-| Component | Part | Purpose | Status |
-|-----------|------|---------|--------|
-| Microcontroller | Raspberry Pi Pico 2W (RP2350) | Main processor | ✅ Working |
-| Microcontroller | ESP-01s | Wifi processor | ✅ Working |
-| Accelerometer | LIS3DH (I2C) | 3-axis G-force measurement | ✅ Working |
-| GPS | ATGM336H (UART) | Position, speed, timing | ✅ Working |
-| Display | SSD1306 OLED 128x64 (I2C) | Live telemetry display | ✅ Working |
-| Storage | PiCowbell Adalogger + SD card | Data logging | ✅ Working |
-| Lights | Neopixel Jewel | Flashy | ✅ Working |
-| OBD-II | VGate iCar Pro (BLE) | Engine data (future) | ⏳ Planned |
+Tracking in (BOM File)[logger_refactor/BOM.md]
 
 ### Pinout
 ```
-Raspberry Pi Pico 2W GPIO Assignment:
-
-GP0  - ESP-01 TX (UART0)
-GP1  - ESP-01 RX (UART0)
-GP2  - GPS PPS (1Hz timing pulse)
-GP8  - I2C SDA (LIS3DH + OLED)/STEMMA
-GP9  - I2C SCL (LIS3DH + OLED)/STEMMA
-GP12 - SD MISO (SPI1)
-GP13 - SD CS
-GP14 - SD SCK
-GP15 - SD MOSI
-GP22 - Neopixel 7 element jewel
-GP25 - Board LED flashing
+Tracking in (PICO_GPIO_TABLE File)(logger_refactor/PICO_GPIO_TABLE.md)
 
 ### Power Consumption
 
 - **Baseline (Accel + OLED):** 20mA @ 5V
-- **+ WiFi Active:** 62mA @ 5V (0.31W)
-- **+ GPS (estimated):** ~100mA @ 5V (0.5W)
+- **+ GPS + ESP-01:** ~100mA @ 5V (0.5W)
 
 **Battery Life:** 20+ hours on 2000mAh USB battery pack
 
@@ -92,31 +75,37 @@ Status               1000ms      Console updates
        ├─────────────► OLED Display (5Hz)
        ├─────────────► Web Interface (JSON API)
        └─────────────► SD Card Logger (buffered)
-       └─────────────► ESP-01s for Web app
 ```
 
 ### File Structure
 ```
 OpenPyPony/
-├── code.py              # Main program
-├── lib/
-│   ├── scheduler.py     # Task scheduler
-│   └── wifi_server.py   # WiFi AP + HTTP server
-├── web/                 # Web interface (on CIRCUITPY drive)
-│   ├── index.html
-│   ├── styles.css
-│   ├── app.js
-│   └── gauge.min.js
-└── version.py           # Auto-generated version info
+├── logger_refactor          # Main Logger
+│   ├── code.py		     # Main for startup
+│   ├── accelerometer.py     # Accelerometer Class
+│   ├── config.py            # Configurtion Class
+│   ├── gps.py               # GPS Class
+│   ├── hardware_setup.py    # Base hardware Configuration Class
+│   ├── neopixel_handler.py  # NeoPixel Class
+│   ├── oled.py              # OLed Class
+│   ├── rtc_handler.py       # RTC Class
+│   ├── sdcard.py            # SD Card/Storage Class
+│   ├── serial_com.py        # Serial Communications Class
+│   └── utils.py             # Utilites Class
+└── circuitpython            # Old Logger
+    └── esp-client	     # Arduino ESP-01s Webserver
 ```
 
 ### Data Format
 
 **CSV Log Files:** `/sd/session_{value}.csv`
 ```csv
-timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total
-0,-9.350,-0.280,-2.000,-0.95,-0.03,-0.20,0.97
-100,-9.340,-0.290,-2.010,-0.95,-0.03,-0.20,0.97
+# Driver: John
+# VIN: 1ZVBP8AM5E5123456
+# Start: 785
+timestamp,gx,gy,gz,g_total,lat,lon,alt,speed,sats,hdop
+785,-0.03,-0.01,1.05,1.05,0,0,0.0,0.0,0,0.0
+785,-0.02,-0.0,1.04,1.04,0,0,0.0,0.0,0,1.4
 ```
 
 ---
@@ -126,9 +115,14 @@ timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total
 ### Prerequisites
 
 - CircuitPython 10.x on Raspberry Pi Pico 2W
-- Required libraries (place in `lib/`):
+- Required libraries (place in `lib/`) [CircuitPython Libraries](https://circuitpython.org/libraries):
   - `adafruit_lis3dh`
+  - `adafruit_gps`
   - `adafruit_displayio_ssd1306`
+  - `adafruit_display_text`
+  - `adafruit_bitmap_font`
+  - `adafruit_displayio_ssd1306`
+  - `neopixel`
   - `sdcardio` (built-in)
 
 ### Installation
@@ -136,10 +130,7 @@ timestamp_ms,accel_x,accel_y,accel_z,gforce_x,gforce_y,gforce_z,gforce_total
 1. **Flash CircuitPython 10.x** to Pico 2W
 2. **Copy files** to CIRCUITPY drive:
 ```
-   code.py
-   lib/scheduler.py
-   lib/wifi_server.py
-   web/ (entire directory)
+   logger_refactor/*.py
 ```
 3. **Install required libraries** in `lib/`
 4. **Insert formatted SD card** (FAT32)
@@ -190,7 +181,6 @@ Access at `http://192.168.4.1` when connected to OpenPonyLogger WiFi:
 - [x] SD Card Logging
 - [x] GPS Module
 - [x] WiFi AP + Web Server via esp-01s
-- [ ] GPS PPS timing
 - [ ] Bluetooth OBD-II (optional)
 
 ### Phase 2: Integration & Testing
@@ -203,6 +193,7 @@ Access at `http://192.168.4.1` when connected to OpenPonyLogger WiFi:
 - [ ] Dual-core architecture (RP2350)
 - [ ] DMA for UART/SPI
 - [ ] Hardware interrupts
+- [ ] GPS PPS timing (Requires Hardware Interrupts)
 - [ ] Lock-free ring buffers
 - [ ] Optimized for 100Hz+ sampling
 
