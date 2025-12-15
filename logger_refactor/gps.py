@@ -56,6 +56,7 @@ class GPS:
         speed_mph = speed_knots * 1.15078  # Convert knots to MPH
         sats = self.gps.satellites if self.gps.satellites else 0
         hdop = self.gps.hdop if self.gps.hdop else 0.0
+        heading = self.gps.track_angle_deg if self.gps.track_angle_deg is not None else 0.0
         
         # Determine fix type
         if not self.gps.has_fix:
@@ -72,7 +73,8 @@ class GPS:
             "alt": round(alt, 1),
             "speed": round(speed_mph, 1),
             "sats": sats,
-            "hdop": round(hdop, 1)
+            "hdop": round(hdop, 1),
+            "heading": round(heading, 1)
         }
 
     def get_satellites_json(self):
