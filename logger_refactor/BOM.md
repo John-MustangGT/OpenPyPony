@@ -22,6 +22,8 @@ None of these are *required* for the logger to work. Just makes it **better**.  
 | Display | Adafruit | [Monochrome 0.96" 128x64 OLED Display](https://www.adafruit.com/product/326) | $18 | STEMA QT version |
 | Display | Amazon | [0.96" OLED 128x64 Display Module](https://a.co/d/gzruQRj) | $13 | DIY Version |
 | Lights | Adafruit | [NeoPixel Jewel](https://www.adafruit.com/product/2226) | $6 | Some status dazzle |
+| GPS Antenna | Amazon | [SMA GPS Antenna](https://a.co/d/cPT4l4I) | $8 | Much better antenna |
+| u.fl pigtail | Amazon | [U.FL to SMA cable](https://a.co/d/cPT4l4I) | $10 | Needed to hook up the antenna | 
 
 
 ## Future
