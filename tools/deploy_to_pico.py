@@ -4,17 +4,16 @@ deploy_to_pico.py - Deploy OpenPonyLogger to CircuitPython device
 
 This script automates the complete deployment process:
 1. Detects mounted CIRCUITPY drive
-2. Compresses web assets
-3. Copies all required files to Pico
+2. Copies logger.py to Pico
+3. Optionally installs dependencies via circup
 4. Validates installation
-5. Optionally installs dependencies via circup
 
 Usage:
     python3 deploy_to_pico.py                    # Auto-detect and deploy
     python3 deploy_to_pico.py --drive /Volumes/CIRCUITPY
     python3 deploy_to_pico.py --clean            # Clean install
-    python3 deploy_to_pico.py --no-web           # Skip web compression
     python3 deploy_to_pico.py --install-deps     # Install CircuitPython libraries
+    python3 deploy_to_pico.py --reset            # Factory reset Pico
 """
 
 import os
@@ -23,7 +22,6 @@ import shutil
 import subprocess
 import platform
 import argparse
-import tempfile
 from pathlib import Path
 
 class Colors:
@@ -100,50 +98,6 @@ def check_git_repo():
         return False
     return True
 
-def compress_web_assets(output_dir):
-    """
-    Compress web assets for CircuitPython
-    
-    Args:
-        output_dir: Directory to output compressed files
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    print_info("Compressing web assets...")
-    
-    web_dir = Path("web")
-    if not web_dir.exists():
-        print_error(f"Web directory not found: {web_dir}")
-        return False
-    
-    script = Path("tools/prepare_web_assets_cp.py")
-    if not script.exists():
-        print_error(f"Compression script not found: {script}")
-        return False
-    
-    try:
-        result = subprocess.run(
-            ["python3", str(script), str(web_dir), str(output_dir)],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        
-        # Print compression results
-        for line in result.stdout.split('\n'):
-            if 'savings' in line.lower() or 'bytes' in line.lower():
-                print(f"  {line}")
-        
-        print_success("Web assets compressed successfully")
-        return True
-        
-    except subprocess.CalledProcessError as e:
-        print_error(f"Compression failed: {e}")
-        if e.stderr:
-            print(e.stderr)
-        return False
-
 def copy_file_with_backup(src, dst, backup=True):
     """
     Copy file with optional backup
@@ -165,190 +119,93 @@ def copy_file_with_backup(src, dst, backup=True):
     shutil.copy2(src, dst)
     print_info(f"  Copied {Path(src).name} → {dst_path.name}")
 
-def check_mpy_cross():
+def files_differ(src, dst):
     """
-    Check if mpy-cross is available
-    
-    Returns:
-        True if available, False otherwise
-    """
-    try:
-        result = subprocess.run(
-            ["mpy-cross", "--version"],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-def compile_to_mpy(src_file, output_dir):
-    """
-    Compile Python file to .mpy
+    Check if two files differ in content
     
     Args:
-        src_file: Source .py file
-        output_dir: Output directory for .mpy
+        src: Source file path
+        dst: Destination file path
     
     Returns:
-        Path to .mpy file or None if failed
+        True if files differ or dst doesn't exist, False if identical
     """
-    src_path = Path(src_file)
-    mpy_file = Path(output_dir) / src_path.with_suffix('.mpy').name
+    if not dst.exists():
+        return True
     
-    try:
-        subprocess.run(
-            ["mpy-cross", str(src_path), "-o", str(mpy_file)],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        
-        # Show size comparison
-        src_size = src_path.stat().st_size
-        mpy_size = mpy_file.stat().st_size
-        savings = (1 - mpy_size / src_size) * 100
-        print_info(f"  Compiled {src_path.name}: {src_size} → {mpy_size} bytes ({savings:.1f}% savings)")
-        
-        return mpy_file
-        
-    except subprocess.CalledProcessError as e:
-        print_error(f"  Failed to compile {src_file}: {e}")
-        if e.stderr:
-            print(f"    {e.stderr}")
-        return None
+    # Compare file sizes first (quick check)
+    if src.stat().st_size != dst.stat().st_size:
+        return True
+    
+    # Compare content
+    with open(src, 'rb') as f1, open(dst, 'rb') as f2:
+        return f1.read() != f2.read()
 
-def deploy_python_files(drive_path, backup=True, use_mpy=False):
+def deploy_python_modules(drive_path, backup=True):
     """
-    Deploy Python source files to CIRCUITPY drive
+    Deploy all Python modules from circuitpython/ to CIRCUITPY drive
+    Only copies files that have changed.
     
     Args:
         drive_path: Path to CIRCUITPY drive
         backup: If True, backup existing files
-        use_mpy: If True, compile to .mpy before deploying
     
     Returns:
-        True if successful, False otherwise
+        Tuple of (success, files_copied, files_skipped)
     """
-    print_info("Deploying Python files...")
+    print_info("Deploying Python modules...")
     
-    files_to_deploy = {
-        # Main application
-        "circuitpython/code.py": "code.py",
-
-        # Modules from circuitpython/local/
-        "circuitpython/local/wifi_server.py": "wifi_server.py",
-        "circuitpython/local/scheduler.py": "scheduler.py",
-        "circuitpython/local/binary_format.py": "binary_format.py",
-
-        # Configuration (if exists)
-        "circuitpython/settings.toml": "settings.toml",
-    }
-    NO_COMPILE_FILES = ["code.py", "settings.toml"]
+    # List of all Python modules to deploy
+    python_modules = [
+        "code.py",
+        "accelerometer.py",
+        "config.py",
+        "gps.py",
+        "hardware_setup.py",
+        "neopixel_handler.py",
+        "oled.py",
+        "rtc_handler.py",
+        "sdcard.py",
+        "serial_com.py",
+        "utils.py",
+    ]
     
-    # Check if mpy-cross is available
-    if use_mpy:
-        if not check_mpy_cross():
-            print_warning("  mpy-cross not found, deploying .py files instead")
-            print_info("  Install with: pip install mpy-cross")
-            use_mpy = False
-        else:
-            print_success("  Using mpy-cross for bytecode compilation")
-    
-    success = True
-    mpy_temp_dir = None
-    
-    if use_mpy:
-        import tempfile
-        mpy_temp_dir = Path(tempfile.mkdtemp(prefix="mpy_"))
-    
-    for src, dst in files_to_deploy.items():
-        src_path = Path(src)
-        if not src_path.exists():
-            print_warning(f"  File not found, skipping: {src}")
-            continue
-        
-        # Skip non-Python files
-        if not src.endswith('.py'):
-            dst_path = Path(drive_path) / dst
-            try:
-                copy_file_with_backup(src_path, dst_path, backup)
-            except Exception as e:
-                print_error(f"  Failed to copy {src}: {e}")
-                success = False
-            continue
-        # Check if this file should be compiled
-        should_compile = use_mpy and dst not in NO_COMPILE_FILES
-        
-        # Compile to .mpy if requested
-        if should_compile:
-            mpy_file = compile_to_mpy(src_path, mpy_temp_dir)
-            if mpy_file:
-                # Deploy .mpy file
-                dst_path = Path(drive_path) / dst.replace('.py', '.mpy')
-                try:
-                    copy_file_with_backup(mpy_file, dst_path, backup)
-                except Exception as e:
-                    print_error(f"  Failed to copy {mpy_file.name}: {e}")
-                    success = False
-            else:
-                # Fallback to .py
-                print_warning(f"  Compilation failed, deploying {src} as .py")
-                dst_path = Path(drive_path) / dst
-                try:
-                    copy_file_with_backup(src_path, dst_path, backup)
-                except Exception as e:
-                    print_error(f"  Failed to copy {src}: {e}")
-                    success = False
-        else:
-            # Deploy .py file
-            dst_path = Path(drive_path) / dst
-            try:
-                copy_file_with_backup(src_path, dst_path, backup)
-            except Exception as e:
-                print_error(f"  Failed to copy {src}: {e}")
-                success = False
-    
-    # Cleanup temp directory
-    if mpy_temp_dir and mpy_temp_dir.exists():
-        import shutil
-        shutil.rmtree(mpy_temp_dir)
-    
-    return success
-
-def deploy_web_assets(drive_path, compressed_dir):
-    """
-    Deploy compressed web assets
-    
-    Args:
-        drive_path: Path to CIRCUITPY drive
-        compressed_dir: Directory containing compressed assets
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    print_info("Deploying web assets...")
-    
-    web_dst = Path(drive_path) / "web"
-    web_dst.mkdir(exist_ok=True)
-    
-    # Copy all files from compressed directory
-    compressed_path = Path(compressed_dir)
-    if not compressed_path.exists():
-        print_error(f"Compressed directory not found: {compressed_dir}")
-        return False
+    src_dir = Path("circuitpython")
+    if not src_dir.exists():
+        print_error(f"Source directory not found: {src_dir}")
+        return False, 0, 0
     
     files_copied = 0
-    for file in compressed_path.iterdir():
-        if file.is_file():
-            dst = web_dst / file.name
-            shutil.copy2(file, dst)
-            print_info(f"  Copied {file.name}")
-            files_copied += 1
+    files_skipped = 0
+    all_success = True
     
-    print_success(f"Deployed {files_copied} web assets")
-    return True
+    for module in python_modules:
+        src = src_dir / module
+        
+        if not src.exists():
+            print_warning(f"  Module not found, skipping: {module}")
+            continue
+        
+        dst = Path(drive_path) / module
+        
+        # Check if file needs updating
+        if files_differ(src, dst):
+            try:
+                copy_file_with_backup(src, dst, backup)
+                files_copied += 1
+            except Exception as e:
+                print_error(f"  Failed to deploy {module}: {e}")
+                all_success = False
+        else:
+            print_info(f"  Unchanged: {module}")
+            files_skipped += 1
+    
+    if files_copied > 0:
+        print_success(f"Deployed {files_copied} module(s)")
+    if files_skipped > 0:
+        print_info(f"Skipped {files_skipped} unchanged module(s)")
+    
+    return all_success, files_copied, files_skipped
 
 def clean_deployment(drive_path):
     """
@@ -359,61 +216,96 @@ def clean_deployment(drive_path):
     """
     print_info("Cleaning existing deployment...")
     
-    # Files to remove
-    files_to_clean = [
-        "code.py.backup",
-        "wifi_server_gz.py.backup",
-        "web_server_gz.py.backup",
+    # Python modules to remove (including backups)
+    python_modules = [
+        "code.py",
+        "accelerometer.py",
+        "config.py",
+        "gps.py",
+        "hardware_setup.py",
+        "neopixel_handler.py",
+        "oled.py",
+        "rtc_handler.py",
+        "sdcard.py",
+        "serial_com.py",
+        "utils.py",
     ]
     
-    # Directories to clean
-    dirs_to_clean = [
-        "web",
-    ]
+    files_removed = 0
     
-    for file in files_to_clean:
+    for module in python_modules:
+        # Remove main file
+        file_path = Path(drive_path) / module
+        if file_path.exists():
+            file_path.unlink()
+            print_info(f"  Removed {module}")
+            files_removed += 1
+        
+        # Remove backup if exists
+        backup_path = Path(drive_path) / f"{module}.backup"
+        if backup_path.exists():
+            backup_path.unlink()
+            print_info(f"  Removed {module}.backup")
+            files_removed += 1
+    
+    # Remove legacy files
+    legacy_files = ["logger.py", "logger.py.backup"]
+    for file in legacy_files:
         file_path = Path(drive_path) / file
         if file_path.exists():
             file_path.unlink()
             print_info(f"  Removed {file}")
+            files_removed += 1
     
-    for dir in dirs_to_clean:
-        dir_path = Path(drive_path) / dir
-        if dir_path.exists():
-            shutil.rmtree(dir_path)
-            print_info(f"  Removed {dir}/")
-    
-    print_success("Cleanup complete")
+    if files_removed > 0:
+        print_success(f"Cleanup complete ({files_removed} file(s) removed)")
+    else:
+        print_info("No files to clean")
 
-def validate_deployment(drive_path, check_mpy=False):
+def validate_deployment(drive_path):
     """
     Validate that deployment was successful
     
     Args:
         drive_path: Path to CIRCUITPY drive
-        check_mpy: If True, check for .mpy files instead of .py
     
     Returns:
         True if valid, False otherwise
     """
     print_info("Validating deployment...")
     
-    # Adjust file extensions based on deployment type
-    py_ext = '.mpy' if check_mpy else '.py'
-    
+    # Required Python modules
     required_files = [
-        f"code{py_ext}",
-        f"wifi_server{py_ext}",
-        f"binary_format{py_ext}",
-#        f"web_server{py_ext}",
-        "web/asset_map.py",  # Always .py
-        "web/index.html.gz",
-        "web/styles.css.gz",
-        "web/app.js.gz",
-        "web/gauge.min.js.gz",
+        "code.py",
+        "hardware_setup.py",
+        "utils.py",
+    ]
+    
+    # Optional modules (warn if missing but don't fail)
+    optional_files = [
+        "accelerometer.py",
+        "config.py",
+        "gps.py",
+        "neopixel_handler.py",
+        "oled.py",
+        "rtc_handler.py",
+        "sdcard.py",
+        "serial_com.py",
+    ]
+    
+    # Recommended libraries
+    recommended_libs = [
+        "lib/adafruit_lis3dh.mpy",
+        "lib/adafruit_gps.mpy",
+        "lib/adafruit_displayio_ssd1306.mpy",
+        "lib/adafruit_display_text",
+        "lib/adafruit_bitmap_font",
+        "lib/neopixel.mpy",
     ]
     
     all_valid = True
+    
+    print_info("Required modules:")
     for file in required_files:
         file_path = Path(drive_path) / file
         if file_path.exists():
@@ -422,6 +314,37 @@ def validate_deployment(drive_path, check_mpy=False):
         else:
             print_error(f"  Missing: {file}")
             all_valid = False
+    
+    print_info("Optional modules:")
+    optional_found = 0
+    for file in optional_files:
+        file_path = Path(drive_path) / file
+        if file_path.exists():
+            size = file_path.stat().st_size
+            print_success(f"  {file} ({size:,} bytes)")
+            optional_found += 1
+        else:
+            print_warning(f"  Not found: {file}")
+    
+    print_info(f"Found {optional_found}/{len(optional_files)} optional modules")
+    
+    print_info("Recommended libraries (install with --install-deps):")
+    libs_found = 0
+    for file in recommended_libs:
+        file_path = Path(drive_path) / file
+        if file_path.exists():
+            if file_path.is_dir():
+                print_success(f"  {file}/ (directory)")
+                libs_found += 1
+            else:
+                size = file_path.stat().st_size
+                print_success(f"  {file} ({size:,} bytes)")
+                libs_found += 1
+        else:
+            print_warning(f"  Not found: {file}")
+    
+    if libs_found < len(recommended_libs):
+        print_warning(f"Only {libs_found}/{len(recommended_libs)} libraries found. Run: make install-deps")
     
     return all_valid
 
@@ -446,26 +369,23 @@ def install_circuitpython_libs(drive_path):
     except (subprocess.CalledProcessError, FileNotFoundError):
         print_warning("circup not installed")
         print_info("Install with: pip install circup")
-        print_info("Or: brew install circup (macOS)")
         return False
     
     # Install/update libraries
     print_info("Installing/updating CircuitPython libraries...")
     
+    req_file = Path("circuitpython/requirements.txt")
+    if not req_file.exists():
+        print_error(f"Requirements file not found: {req_file}")
+        return False
+    
     try:
-        # Change to the CIRCUITPY directory first
-        import os
-        original_dir = os.getcwd()
-        os.chdir(drive_path)
-
         result = subprocess.run(
-            ["circup", "install", "-a"],  # Removed --path
+            ["circup", "install", "-r", str(req_file), "--path", drive_path],
             capture_output=True,
             text=True,
             check=True
         )
-
-        os.chdir(original_dir)
         print(result.stdout)
         print_success("Libraries installed/updated")
         return True
@@ -476,6 +396,62 @@ def install_circuitpython_libs(drive_path):
             print(e.stderr)
         return False
 
+def reset_pico(drive_path):
+    """
+    Factory reset the Pico by deploying a filesystem erase script
+    
+    Args:
+        drive_path: Path to CIRCUITPY drive
+    """
+    print_header("Factory Reset Pico")
+    
+    print_error("WARNING: This will ERASE ALL DATA on the Pico!")
+    print_warning("This includes:")
+    print("  - All Python files (code.py, logger.py, etc.)")
+    print("  - All libraries (/lib directory)")
+    print("  - All settings (settings.toml, boot.py)")
+    print("  - All user data")
+    print()
+    
+    confirm = input("Type 'RESET' to confirm: ")
+    if confirm != "RESET":
+        print_warning("Reset cancelled")
+        return False
+    
+    print()
+    print_info("Creating reset script...")
+    
+    reset_script = """import storage
+import os
+
+print("=" * 50)
+print("FACTORY RESET - Erasing filesystem...")
+print("=" * 50)
+
+try:
+    storage.erase_filesystem()
+    print("✓ Filesystem erased successfully")
+    print("Pico will now reboot with clean filesystem")
+except Exception as e:
+    print(f"✗ Reset failed: {e}")
+"""
+    
+    reset_path = Path(drive_path) / "code.py"
+    with open(reset_path, 'w') as f:
+        f.write(reset_script)
+    
+    print_success("Reset script deployed")
+    print()
+    print_warning("Please eject and reset your Pico now.")
+    print("The Pico will:")
+    print("  1. Boot and run the reset script")
+    print("  2. Erase the filesystem")
+    print("  3. Reboot with a clean filesystem")
+    print()
+    print_info("After reset, run: make install-deps && make deploy")
+    
+    return True
+
 def show_post_deployment_info(drive_path):
     """Show helpful information after deployment"""
     print_header("Deployment Complete!")
@@ -483,20 +459,21 @@ def show_post_deployment_info(drive_path):
     print(f"{Colors.OKGREEN}Next steps:{Colors.ENDC}")
     print(f"  1. Safely eject CIRCUITPY drive")
     print(f"  2. Pico will auto-restart with new code")
-    print(f"  3. Connect to WiFi: OpenPonyLogger")
-    print(f"  4. Browse to: http://192.168.4.1")
+    print(f"  3. Connect via serial to view output")
     print()
     
-    print(f"{Colors.OKCYAN}Verification:{Colors.ENDC}")
-    print(f"  - Check browser DevTools (F12)")
-    print(f"  - Network tab → Response Headers")
-    print(f"  - Should see: Content-Encoding: gzip")
+    print(f"{Colors.OKCYAN}Serial Console:{Colors.ENDC}")
+    system = platform.system()
+    if system == "Darwin":
+        print(f"  screen /dev/tty.usbmodem* 115200")
+    elif system == "Linux":
+        print(f"  screen /dev/ttyACM0 115200")
     print()
     
     print(f"{Colors.WARNING}Troubleshooting:{Colors.ENDC}")
-    print(f"  - Serial console: screen /dev/tty.usbmodem* 115200")
-    print(f"  - View logs for errors")
-    print(f"  - Check web/ directory has .gz files")
+    print(f"  - Check serial output for errors")
+    print(f"  - Verify libraries installed: make validate")
+    print(f"  - Install deps if needed: make install-deps")
     print()
 
 def main():
@@ -509,6 +486,7 @@ Examples:
   python3 deploy_to_pico.py --clean         # Clean install
   python3 deploy_to_pico.py --no-backup     # Don't backup existing files
   python3 deploy_to_pico.py --install-deps  # Also install CircuitPython libs
+  python3 deploy_to_pico.py --reset         # Factory reset Pico
         """
     )
     
@@ -517,18 +495,15 @@ Examples:
     parser.add_argument('--clean', 
                        action='store_true',
                        help='Clean existing deployment before installing')
-    parser.add_argument('--no-web', 
-                       action='store_true',
-                       help='Skip web asset compression and deployment')
     parser.add_argument('--no-backup', 
                        action='store_true',
                        help='Do not backup existing files')
     parser.add_argument('--install-deps', 
                        action='store_true',
                        help='Install/update CircuitPython libraries via circup')
-    parser.add_argument('--mpy', 
+    parser.add_argument('--reset', 
                        action='store_true',
-                       help='Compile Python files to .mpy bytecode (faster loading, less RAM)')
+                       help='Factory reset Pico filesystem (DESTRUCTIVE)')
     
     args = parser.parse_args()
     
@@ -564,31 +539,25 @@ Examples:
             first_line = f.readline().strip()
             print_info(f"  {first_line}")
     
+    # Handle reset separately
+    if args.reset:
+        return 0 if reset_pico(drive_path) else 1
+    
     # Clean if requested
     if args.clean:
         clean_deployment(drive_path)
     
-    # Compress web assets
-    compressed_dir = None
-    if not args.no_web:
-        print_header("Compressing Web Assets")
-        
-        with tempfile.TemporaryDirectory() as tmpdir:
-            compressed_dir = Path(tmpdir) / "web_compressed"
-            
-            if not compress_web_assets(compressed_dir):
-                print_error("Web asset compression failed!")
-                return 1
-            
-            # Deploy web assets
-            print_header("Deploying to Pico")
-            if not deploy_web_assets(drive_path, compressed_dir):
-                print_error("Web asset deployment failed!")
-                return 1
+    # Deploy Python modules
+    print_header("Deploying to Pico")
+    success, copied, skipped = deploy_python_modules(drive_path, backup=not args.no_backup)
+    if not success:
+        print_error("Deployment had errors!")
+        return 1
     
-    # Deploy Python files
-    if not deploy_python_files(drive_path, backup=not args.no_backup, use_mpy=args.mpy):
-        print_warning("Some Python files failed to deploy")
+    if copied == 0 and skipped > 0:
+        print_info("All modules are up to date!")
+    elif copied > 0:
+        print_success(f"Successfully deployed {copied} updated module(s)")
     
     # Install dependencies if requested
     if args.install_deps:
@@ -597,7 +566,7 @@ Examples:
     
     # Validate deployment
     print_header("Validating Deployment")
-    if not validate_deployment(drive_path, check_mpy=args.mpy):
+    if not validate_deployment(drive_path):
         print_warning("Validation found issues - please check manually")
     else:
         print_success("All required files present!")
