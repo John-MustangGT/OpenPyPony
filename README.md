@@ -35,7 +35,6 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 Tracking in [BOM File](docs/BOM.md)
 
 ### Pinout
-```
 Tracking in [PICO_GPIO_TABLE File](docs/PICO_GPIO_TABLE.md)
 
 ### Power Consumption
