@@ -288,6 +288,8 @@ class BinaryLogger:
         self.block_sequence = 0
         self._last_flush_time = 0
         self.active = False
+        self.start_time = None
+        self.bytes_written = None
     
     def start_session(self, session_name="", driver_name="", vehicle_id="",
                      weather=WEATHER_UNKNOWN, ambient_temp=0, config_crc=0):
@@ -316,6 +318,7 @@ class BinaryLogger:
             timestamp = int(time.monotonic())
             self.log_filename = f"{self.base_path}/session_{timestamp}.opl"
         
+        self.bytes_written = 0
         # Open log file and write session header
         self.log_file = open(self.log_filename, 'wb')
         self.log_file.write(self.current_session.to_bytes())
@@ -327,6 +330,7 @@ class BinaryLogger:
             self.current_session.session_id,
             self.block_sequence
         )
+        self.start_time = time.monotonic()
         self._last_flush_time = time.monotonic()
         self.active = True
         
@@ -359,6 +363,7 @@ class BinaryLogger:
         if self.current_block and not self.current_block.is_empty():
             self.log_file.write(self.current_block.to_bytes())
             self.log_file.flush()
+            self.bytes_written += len(self.current_block.to_bytes())
             
             # Create new block
             self.block_sequence += 1
@@ -404,3 +409,16 @@ class BinaryLogger:
         for sat in satellites:
             data += struct.pack('<BBBB', sat['id'], sat['azimuth'], sat['elevation'], sat['snr'])
         return self.write_sample(SAMPLE_TYPE_GPS_SATELLITES, data, timestamp_us)
+
+    def get_duration(self):
+        """Get current session duration"""
+        if not self.active or not self.start_time:
+            return 0
+        return time.monotonic() - self.start_time
+
+    def get_bytes_per_second(self): 
+        """Get average bytes per second"""
+        duration = self.get_duration()
+        if duration <= 0:
+            return 0
+        return self.bytes_written / duration
