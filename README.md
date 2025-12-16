@@ -32,11 +32,11 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 
 ### Bill of Materials
 
-Tracking in (BOM File)[logger_refactor/BOM.md]
+Tracking in [BOM File](docs/BOM.md)
 
 ### Pinout
 ```
-Tracking in (PICO_GPIO_TABLE File)(logger_refactor/PICO_GPIO_TABLE.md)
+Tracking in [PICO_GPIO_TABLE File](docs/PICO_GPIO_TABLE.md)
 
 ### Power Consumption
 
@@ -80,7 +80,7 @@ Status               1000ms      Console updates
 ### File Structure
 ```
 OpenPyPony/
-├── logger_refactor          # Main Logger
+├── circuitpython            # Main Logger
 │   ├── code.py		     # Main for startup
 │   ├── accelerometer.py     # Accelerometer Class
 │   ├── config.py            # Configurtion Class
@@ -91,9 +91,12 @@ OpenPyPony/
 │   ├── rtc_handler.py       # RTC Class
 │   ├── sdcard.py            # SD Card/Storage Class
 │   ├── serial_com.py        # Serial Communications Class
-│   └── utils.py             # Utilites Class
-└── circuitpython            # Old Logger
-    └── esp-client	     # Arduino ESP-01s Webserver
+│   ├── utils.py             # Utilites Class
+│   └── esp-client	     # Arduino ESP-01s Webserver
+└── docs
+    ├── BOM.md               # Bill of Materials
+    ├── WIRING.md	     # How to wire it
+    └── PICO_GPIO_TABLE.md   # Table of how the GPIOs are used
 ```
 
 ### Data Format
