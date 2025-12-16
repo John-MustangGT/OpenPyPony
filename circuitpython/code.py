@@ -20,7 +20,10 @@ def main():
     # Initialize components
     accel = Accelerometer(hw.lis3dh)
     gps = GPS(hw.gps)
-    rtc = RTCHandler(hw.rtc_clock)
+    rtc = RTCHandler(
+        config.get_int("TIMEZONE_OFFSET", -5), 
+        config.get_bool("TIMEZONE_AUTO_DST", True)
+    )
     session = SessionLogger("/sd")
     oled = OLED(hw.display)
     protocol = JSONProtocol(hw.esp_uart, session, gps)
