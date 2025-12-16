@@ -31,11 +31,11 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 ## Hardware
 
 ### Bill of Materials
-
-Tracking in [BOM File](docs/BOM.md)
+- [BOM File](docs/BOM.md)
 
 ### Pinout
-Tracking in [PICO_GPIO_TABLE File](docs/PICO_GPIO_TABLE.md)
+- [Wiring table](docs/WIRING.md)
+- [PICO_GPIO_TABLE File](docs/PICO_GPIO_TABLE.md)
 
 ### Power Consumption
 
