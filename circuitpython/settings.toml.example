@@ -1,0 +1,106 @@
+# OpenPonyLogger Configuration
+# Copy this file to settings.toml and customize
+
+# =============================================================================
+# Logging Configuration
+# =============================================================================
+
+# Log format: 'binary' or 'csv'
+# Binary format (.opl files):
+#   - Smaller file size (~60% of CSV)
+#   - Session metadata embedded
+#   - Data integrity checksums (SHA-256 or CRC32)
+#   - Event-based flushing
+#   - Requires parser tool to read
+# CSV format (.csv files):
+#   - Human readable
+#   - Easy to import into Excel/analysis tools
+#   - Larger file size
+#   - Simple header row
+LOG_FORMAT = "binary"
+
+# Session metadata (used in binary format)
+SESSION_NAME = "Track Day"
+DRIVER_NAME = "John"
+VEHICLE_ID = "Ciara"
+
+# =============================================================================
+# Sample Rates
+# =============================================================================
+
+# Accelerometer sample rate in Hz (10-100)
+# Higher rates = more data, more power usage
+ACCEL_SAMPLE_RATE = "100"
+
+# GPS update rate in milliseconds (1000-5000)
+# Lower values = more frequent updates, more power
+GPS_UPDATE_RATE = "1000"
+
+# =============================================================================
+# Event Thresholds
+# =============================================================================
+
+# G-force threshold for event markers (binary format only)
+# When total G-force exceeds this, data is flushed immediately
+# Typical values: 2.5-3.5g
+GFORCE_EVENT_THRESHOLD = "3.0"
+
+# =============================================================================
+# Display Configuration
+# =============================================================================
+
+# Splash screen duration in seconds
+SPLASH_DURATION = "2.0"
+
+# OLED brightness (0-255)
+OLED_BRIGHTNESS = "255"
+
+# NeoPixel brightness (0.0-1.0)
+NEOPIXEL_BRIGHTNESS = "0.3"
+
+# Enable/disable NeoPixel Jewel
+NEOPIXEL_ENABLED = "true"
+
+# =============================================================================
+# WiFi Configuration
+# =============================================================================
+
+# WiFi Access Point Settings
+WIFI_SSID = "OpenPonyLogger"
+WIFI_PASSWORD = "mustanggt"
+WIFI_ENABLED = "true"
+
+# =============================================================================
+# Debug Options
+# =============================================================================
+
+# Enable serial debug output
+SERIAL_DEBUG = "true"
+
+# =============================================================================
+# Preset Configurations (uncomment one to use)
+# =============================================================================
+
+# Track Day (Maximum Performance):
+#   LOG_FORMAT = "binary"
+#   ACCEL_SAMPLE_RATE = "100"
+#   GPS_UPDATE_RATE = "1000"
+#   GFORCE_EVENT_THRESHOLD = "2.5"
+#   SERIAL_DEBUG = "false"
+#   SPLASH_DURATION = "0"
+
+# Daily Commute (Balanced):
+#   LOG_FORMAT = "csv"
+#   ACCEL_SAMPLE_RATE = "50"
+#   GPS_UPDATE_RATE = "2000"
+#   GFORCE_EVENT_THRESHOLD = "3.0"
+#   SERIAL_DEBUG = "true"
+#   SPLASH_DURATION = "3"
+
+# Extended Recording (Battery Saving):
+#   LOG_FORMAT = "binary"
+#   ACCEL_SAMPLE_RATE = "25"
+#   GPS_UPDATE_RATE = "5000"
+#   GFORCE_EVENT_THRESHOLD = "3.5"
+#   SERIAL_DEBUG = "false"
+#   SPLASH_DURATION = "1"

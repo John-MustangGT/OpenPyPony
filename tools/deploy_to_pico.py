@@ -168,6 +168,8 @@ def deploy_python_modules(drive_path, backup=True):
         "sdcard.py",
         "serial_com.py",
         "utils.py",
+	"binary_logger.py",
+	"session_logger.py",
     ]
     
     src_dir = Path("circuitpython")
@@ -229,6 +231,8 @@ def clean_deployment(drive_path):
         "sdcard.py",
         "serial_com.py",
         "utils.py",
+	"binary_logger.py",
+	"session_logger.py",
     ]
     
     files_removed = 0
@@ -291,6 +295,8 @@ def validate_deployment(drive_path):
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
+	"binary_logger.py",
+	"session_logger.py",
     ]
     
     # Recommended libraries
