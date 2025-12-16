@@ -162,6 +162,7 @@ def deploy_python_modules(drive_path, backup=True):
         "config.py",
         "gps.py",
         "hardware_setup.py",
+	"hardware_config.py",
         "neopixel_handler.py",
         "oled.py",
         "rtc_handler.py",
@@ -282,6 +283,8 @@ def validate_deployment(drive_path):
     required_files = [
         "code.py",
         "hardware_setup.py",
+        "hardware_config.py",
+        "hardware.toml",
         "utils.py",
     ]
     

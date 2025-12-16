@@ -1,0 +1,180 @@
+# hardware.toml - OpenPonyLogger Hardware Configuration
+#
+# This file defines all hardware peripherals, pin assignments, and configurations.
+# Edit this file to match your specific hardware setup.
+#
+# Pin Format: GP## for GPIO pins (e.g., GP25, GP0)
+#            "STEMMA_I2C" for default I2C pins (GP4/GP5)
+#            "STEMMA_UART" for STEMMA QT UART
+#
+# WARNING: Changing pins requires corresponding wiring changes!
+
+# =============================================================================
+# CORE INTERFACES
+# =============================================================================
+
+[interfaces.i2c]
+enabled = true
+sda = "GP4"      # STEMMA QT SDA (default)
+scl = "GP5"      # STEMMA QT SCL (default)
+frequency = 100000
+
+[interfaces.spi]
+enabled = true
+sck = "GP18"     # SD card clock
+mosi = "GP19"    # SD card MOSI
+miso = "GP16"    # SD card MISO
+
+[interfaces.uart_gps]
+enabled = true
+tx = "GP8"       # GPS TX (Pico RX)
+rx = "GP9"       # GPS RX (Pico TX)
+baudrate = 9600
+timeout = 10
+
+[interfaces.uart_esp]
+enabled = true
+tx = "GP0"       # ESP-01s TX
+rx = "GP1"       # ESP-01s RX  
+baudrate = 115200
+timeout = 0.1
+
+
+# =============================================================================
+# SENSORS
+# =============================================================================
+
+[sensors.accelerometer]
+enabled = true
+type = "LIS3DH"
+interface = "i2c"
+address = 0x18
+range = 4           # G-force range: 2, 4, 8, 16
+sample_rate = 100   # Hz: 10, 25, 50, 100, 200, 400
+
+[sensors.gyroscope]
+enabled = false
+type = "LSM6DS33"   # Future support
+interface = "i2c"
+address = 0x6A
+
+[sensors.magnetometer]
+enabled = false
+type = "LIS3MDL"    # Future support
+interface = "i2c"
+address = 0x1E
+
+
+# =============================================================================
+# GPS MODULE
+# =============================================================================
+
+[gps]
+enabled = true
+type = "ATGM336H"
+interface = "uart_gps"
+update_rate = 1000  # milliseconds (1000 = 1Hz)
+pps_pin = "GP7"     # Pulse Per Second pin (optional)
+pps_enabled = false
+
+# NMEA sentences to request (GGA=position, RMC=recommended minimum, GSV=satellites)
+sentences = "0,1,0,1,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0"  # GGA + RMC + GSV
+
+
+# =============================================================================
+# STORAGE
+# =============================================================================
+
+[storage.sdcard]
+enabled = true
+interface = "spi"
+cs_pin = "GP17"     # Chip select
+mount_point = "/sd"
+
+
+# =============================================================================
+# DISPLAY
+# =============================================================================
+
+[display.oled]
+enabled = true
+type = "SSD1306"
+interface = "i2c"
+address = 0x3C
+width = 128
+height = 64
+
+
+# =============================================================================
+# INDICATORS
+# =============================================================================
+
+[indicators.heartbeat_led]
+enabled = true
+pin = "GP25"        # Onboard LED
+blink_rate = 1.0    # Hz
+
+[indicators.neopixel_jewel]
+enabled = true
+pin = "GP22"
+num_pixels = 7
+brightness = 0.3    # 0.0 to 1.0
+# LED positions (Adafruit NeoPixel Jewel layout):
+#   0: Center (master status)
+#   1: OUT (forward acceleration)
+#   2: Right-front
+#   3: Right-rear
+#   4: PWR (braking)
+#   5: Left-rear
+#   6: Left-front
+
+
+# =============================================================================
+# RADIO (ESP-01S)
+# =============================================================================
+
+[radio.esp01s]
+enabled = true
+interface = "uart_esp"
+reset_pin = "GP6"
+reset_duration = 0.05   # seconds
+ready_timeout = 5.0     # seconds to wait for ready message
+
+
+# =============================================================================
+# REAL-TIME CLOCK
+# =============================================================================
+
+[rtc]
+enabled = true
+type = "builtin"    # Pico's internal RTC
+timezone_offset = -5    # Hours from UTC (e.g., -5 for EST, -8 for PST)
+auto_dst = true         # Automatically apply DST
+
+
+# =============================================================================
+# FUTURE EXPANSION
+# =============================================================================
+
+[expansion.can_bus]
+enabled = false
+type = "MCP2515"
+interface = "spi"
+cs_pin = "GP13"
+int_pin = "GP14"
+
+[expansion.obd2]
+enabled = false
+type = "ELM327"
+interface = "uart"
+# Will use separate UART when implemented
+
+[expansion.imu_9dof]
+enabled = false
+# Future: Combined accel + gyro + magnetometer
+
+[expansion.barometer]
+enabled = false
+type = "BMP280"
+interface = "i2c"
+address = 0x76
