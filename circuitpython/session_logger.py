@@ -34,9 +34,20 @@ class CSVLogger:
         if self.active:
             self.stop_session()
         
-        # Generate filename
-        timestamp = int(time.monotonic())
-        self.log_filename = f"{self.base_path}/session_{timestamp}.csv"
+        # Import sdcard helper
+        try:
+            from sdcard import get_sdcard
+            sd = get_sdcard()
+            if sd and sd.mounted:
+                self.log_filename = sd.create_session_filename('csv')
+            else:
+                # Fallback to timestamp-based naming
+                timestamp = int(time.monotonic())
+                self.log_filename = f"{self.base_path}/session_{timestamp}.csv"
+        except:
+            # Fallback to timestamp-based naming
+            timestamp = int(time.monotonic())
+            self.log_filename = f"{self.base_path}/session_{timestamp}.csv"
         
         # Open log file
         self.log_file = open(self.log_filename, "w")
@@ -45,7 +56,7 @@ class CSVLogger:
         header = f"# Session: {session_name}\n"
         header += f"# Driver: {driver_name}\n"
         header += f"# Vehicle: {vehicle_id}\n"
-        header += f"# Start: {timestamp}\n"
+        header += f"# Start: {int(time.monotonic())}\n"
         header += "timestamp,gx,gy,gz,g_total,lat,lon,alt,speed,sats,hdop\n"
         
         self.log_file.write(header)
@@ -55,7 +66,7 @@ class CSVLogger:
         self.start_time = time.monotonic()
         
         print(f"[CSVLog] Session started: {self.log_filename}")
-        return timestamp
+        return int(time.monotonic())
     
     def write_accelerometer(self, gx, gy, gz, timestamp_us=None):
         """Write accelerometer data (buffered until GPS data available)"""

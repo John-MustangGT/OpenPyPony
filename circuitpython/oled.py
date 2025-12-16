@@ -84,7 +84,7 @@ class OLED:
         if session.active:
             duration = format_time_hms(session.get_duration())
             no_ext = (session.filename.split("."))[0]
-            short_name = no_ext[9:] if session.filename else "NoLog"
+            short_name = no_ext.split("_")[1] if session.filename else "NoLog"
             self.line4.text = f"Run:{short_name} {duration}"
         else:
             self.line4.text = "NoLog 00:00:00"

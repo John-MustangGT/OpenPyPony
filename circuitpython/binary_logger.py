@@ -104,20 +104,6 @@ def crc32(data, initial=0):
         crc = _CRC32_TABLE[(crc ^ byte) & 0xFF] ^ (crc >> 8)
     return crc ^ 0xFFFFFFFF
 
-
-def sha256_checksum(data):
-    """Calculate SHA-256 checksum, with fallback to CRC32"""
-    if HAS_HASHLIB:
-        return hashlib.sha256(data).digest()
-    else:
-        # Fallback: use repeated CRC32 to fill 32 bytes
-        result = bytearray(32)
-        for i in range(8):
-            crc = crc32(data, initial=i * 0x12345678)
-            result[i*4:(i+1)*4] = struct.pack('<I', crc)
-        return bytes(result)
-
-
 def generate_uuid():
     """Generate a simple UUID-like identifier"""
     ts = int(time.monotonic() * 1000000)
@@ -281,7 +267,7 @@ class DataBlock:
         
         # Calculate checksum of header + data
         block_data = bytes(header) + data_payload
-        checksum = sha256_checksum(block_data)
+        checksum = crc32(block_data).to_bytes(4, 'big')
         
         return block_data + checksum
 
@@ -315,9 +301,20 @@ class BinaryLogger:
             weather, ambient_temp, config_crc
         )
         
-        # Generate filename
-        timestamp = int(time.monotonic())
-        self.log_filename = f"{self.base_path}/session_{timestamp}.opl"
+        # Generate filename using sequential numbering
+        try:
+            from sdcard import get_sdcard
+            sd = get_sdcard()
+            if sd and sd.mounted:
+                self.log_filename = sd.create_session_filename('opl')
+            else:
+                # Fallback to timestamp-based naming
+                timestamp = int(time.monotonic())
+                self.log_filename = f"{self.base_path}/session_{timestamp}.opl"
+        except:
+            # Fallback to timestamp-based naming
+            timestamp = int(time.monotonic())
+            self.log_filename = f"{self.base_path}/session_{timestamp}.opl"
         
         # Open log file and write session header
         self.log_file = open(self.log_filename, 'wb')

@@ -8,7 +8,8 @@ from config import config
 from accelerometer import Accelerometer
 from gps import GPS
 from rtc_handler import RTCHandler
-from sdcard import Session, FileManager
+#from sdcard import FileManager
+from session_logger import SessionLogger
 from oled import OLED
 from serial_com import JSONProtocol
 from neopixel_handler import NeoPixelHandler
@@ -20,7 +21,7 @@ def main():
     accel = Accelerometer(hw.lis3dh)
     gps = GPS(hw.gps)
     rtc = RTCHandler(hw.rtc_clock)
-    session = Session(rtc)
+    session = SessionLogger("/sd")
     oled = OLED(hw.display)
     protocol = JSONProtocol(hw.esp_uart, session, gps)
     neopixel = NeoPixelHandler(hw.pixel)
@@ -40,9 +41,14 @@ def main():
     time.sleep(0.5)
 
     # Auto-start logging
+    session_name = config.get("SESSION_NAME", "Track Day!")
     driver_name = config.get("DRIVER_NAME", "John")
     vehicle_id = config.get("VEHICLE_ID", "1ZVBP8AM5E5123456")
-    session.start(driver_name, vehicle_id)
+    session.start_session(
+	session_name=session_name,
+	driver_name=driver_name, 
+	vehicle_id=vehicle_id
+    )
 
     print("\n" + "="*50)
     print("OpenPonyLogger v2.1 Running")
@@ -69,7 +75,7 @@ def main():
             gps.update()
             
             sensor_data = {
-                "t": rtc.get_time(),
+                "t": rtc.get_log_timestamp(),
                 "rtc_synced": rtc.synced,
                 "g": accel.read(),
                 "gps": gps.read()
@@ -77,7 +83,21 @@ def main():
             
             # Log to SD card
             if session.active:
-                session.log(sensor_data)
+                session.write_accelerometer(
+                    sensor_data["g"]["x"], 
+                    sensor_data["g"]["y"], 
+                    sensor_data["g"]["z"], 
+                    sensor_data["t"]
+                )
+                session.write_gps(
+                    sensor_data["gps"]["lat"], 
+                    sensor_data["gps"]["lon"], 
+                    sensor_data["gps"]["alt"], 
+                    sensor_data["gps"]["speed"], 
+                    sensor_data["gps"]["heading"], 
+                    sensor_data["gps"]["hdop"], 
+                    sensor_data["t"]
+                )
 
             # Update heartbeat LED (1Hz, 100ms on)
             now = time.monotonic()
