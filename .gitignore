@@ -33,6 +33,13 @@ circuitpython/lib/
 # User configuration (use .example instead)
 settings.toml
 secrets.py
+config/settings.toml
+config/hardware.toml
+
+# Keep example files
+!config/settings.toml.example
+!config/hardware.toml.example
+!config/README.md
 
 # Backups
 backups/
