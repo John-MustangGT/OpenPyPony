@@ -159,6 +159,7 @@ def deploy_python_modules(drive_path, backup=True):
     python_modules = [
         "code.py",
         "accelerometer.py",
+        "binary_logger.py",
         "config.py",
         "gps.py",
         "hardware_setup.py",
@@ -272,6 +273,7 @@ def clean_deployment(drive_path):
     python_modules = [
         "code.py",
         "accelerometer.py",
+        "binary_logger.py",
         "config.py",
         "gps.py",
         "hardware_setup.py",
@@ -339,6 +341,7 @@ def validate_deployment(drive_path):
     # Optional modules (warn if missing but don't fail)
     optional_files = [
         "accelerometer.py",
+        "binary_logger.py",
         "config.py",
         "gps.py",
         "neopixel_handler.py",
@@ -356,6 +359,8 @@ def validate_deployment(drive_path):
         "lib/adafruit_displayio_ssd1306.mpy",
         "lib/adafruit_display_text",
         "lib/adafruit_bitmap_font",
+        "lib/adafruit_pcf8523",
+        "lib/adafruit_register",
         "lib/neopixel.mpy",
     ]
     

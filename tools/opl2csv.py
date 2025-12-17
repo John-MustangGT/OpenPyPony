@@ -26,6 +26,31 @@ FORMAT_VERSION_MINOR = 0
 BLOCK_TYPE_SESSION_HEADER = 0x01
 BLOCK_TYPE_DATA_BLOCK = 0x02
 BLOCK_TYPE_SESSION_END = 0x03
+BLOCK_TYPE_HARDWARE_CONFIG = 0x04
+
+# Hardware types
+HW_TYPE_MAP = {
+    0x01: "Accelerometer",
+    0x02: "GPS",
+    0x03: "Display",
+    0x04: "Storage",
+    0x05: "RTC",
+    0x06: "LED",
+    0x07: "NeoPixel",
+    0x08: "Radio",
+    0x09: "OBD",
+    0x0A: "CAN"
+}
+
+# Connection types
+CONN_TYPE_MAP = {
+    0x01: "I2C",
+    0x02: "SPI",
+    0x03: "UART",
+    0x04: "GPIO",
+    0x05: "STEMMA QT",
+    0x06: "Built-in"
+}
 
 # Sample types
 SAMPLE_TYPE_ACCELEROMETER = 0x01
@@ -60,6 +85,7 @@ class OPLReader:
         self.verbose = verbose
         self.file = None
         self.session_header = None
+        self.hardware_config = None
         self.data_blocks = []
         
     def log(self, msg):
@@ -142,6 +168,60 @@ class OPLReader:
             'weather': weather,
             'ambient_temp': ambient_temp,
             'config_crc': config_crc
+        }
+        
+        return self.session_header
+    
+    def read_hardware_config(self):
+        """
+        Read hardware configuration block (optional)
+        
+        Returns:
+            dict with hardware items or None if not present
+        """
+        # Peek at next block type
+        pos = self.file.tell()
+        magic = self.file.read(4)
+        
+        if magic != MAGIC_BYTES:
+            # Restore position and return
+            self.file.seek(pos)
+            return None
+        
+        block_type = struct.unpack('B', self.file.read(1))[0]
+        
+        if block_type != BLOCK_TYPE_HARDWARE_CONFIG:
+            # Not a hardware config block, restore position
+            self.file.seek(pos)
+            return None
+        
+        self.log("Reading hardware config block...")
+        
+        # Read number of items
+        item_count = struct.unpack('B', self.file.read(1))[0]
+        
+        hardware_items = []
+        for i in range(item_count):
+            hw_type = struct.unpack('B', self.file.read(1))[0]
+            conn_type = struct.unpack('B', self.file.read(1))[0]
+            id_len = struct.unpack('B', self.file.read(1))[0]
+            identifier = self.file.read(id_len).decode('utf-8')
+            
+            hardware_items.append({
+                'type': HW_TYPE_MAP.get(hw_type, f"Unknown(0x{hw_type:02X})"),
+                'connection': CONN_TYPE_MAP.get(conn_type, f"Unknown(0x{conn_type:02X})"),
+                'identifier': identifier
+            })
+            
+            self.log(f"  {hardware_items[-1]['type']}: {hardware_items[-1]['identifier']} ({hardware_items[-1]['connection']})")
+        
+        # Read and verify CRC
+        crc_expected = struct.unpack('<I', self.file.read(4))[0]
+        
+        return {
+            'items': hardware_items,
+            'count': item_count,
+            'crc': crc_expected
         }
         
         return self.session_header
@@ -288,6 +368,9 @@ class OPLReader:
             # Read session header
             self.session_header = self.read_session_header()
             
+            # Try to read hardware config block (optional)
+            self.hardware_config = self.read_hardware_config()
+            
             # Read all data blocks
             while True:
                 block = self.read_data_block()
@@ -327,6 +410,14 @@ class OPLReader:
             f.write(f"# Weather: {h['weather']}, {h['ambient_temp']}°C\n")
             f.write(f"# Format: {h['format_version']}\n")
             f.write(f"# Hardware: {h['hw_version']}\n")
+            
+            # Write hardware configuration if present
+            if self.hardware_config:
+                f.write(f"#\n")
+                f.write(f"# Hardware Configuration ({self.hardware_config['count']} items):\n")
+                for item in self.hardware_config['items']:
+                    f.write(f"#   {item['type']:<15} {item['connection']:<12} {item['identifier']}\n")
+            
             f.write(f"#\n")
             
             # Write CSV header
@@ -411,9 +502,11 @@ Examples:
             
         except Exception as e:
             print(f"✗ Error processing {input_path}: {e}")
+            import traceback
             if args.verbose:
-                import traceback
                 traceback.print_exc()
+            else:
+                print(f"  Run with --verbose for full traceback")
             continue
     
     print()

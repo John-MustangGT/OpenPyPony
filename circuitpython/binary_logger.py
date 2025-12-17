@@ -39,6 +39,7 @@ HARDWARE_VERSION_MINOR = 0
 BLOCK_TYPE_SESSION_HEADER = 0x01
 BLOCK_TYPE_DATA = 0x02
 BLOCK_TYPE_SESSION_END = 0x03
+BLOCK_TYPE_HARDWARE_CONFIG = 0x04  # Hardware configuration block
 
 # Flush flags (bitmask)
 FLUSH_FLAG_TIME = 0x01      # Time-based flush (5 minutes)
@@ -68,6 +69,28 @@ MAX_SESSION_NAME = 64
 MAX_DRIVER_NAME = 32
 MAX_VEHICLE_ID = 24
 MAX_DATA_PAYLOAD = MAX_BLOCK_SIZE - 80  # Reserve space for headers
+
+MAX_HARDWARE_ITEMS = 32  # Max number of hardware items in config
+
+# Hardware types
+HW_TYPE_ACCELEROMETER = 0x01
+HW_TYPE_GPS = 0x02
+HW_TYPE_DISPLAY = 0x03
+HW_TYPE_STORAGE = 0x04
+HW_TYPE_RTC = 0x05
+HW_TYPE_LED = 0x06
+HW_TYPE_NEOPIXEL = 0x07
+HW_TYPE_RADIO = 0x08
+HW_TYPE_OBD = 0x09
+HW_TYPE_CAN = 0x0A
+
+# Connection types
+CONN_TYPE_I2C = 0x01
+CONN_TYPE_SPI = 0x02
+CONN_TYPE_UART = 0x03
+CONN_TYPE_GPIO = 0x04
+CONN_TYPE_STEMMA_QT = 0x05
+CONN_TYPE_BUILTIN = 0x06
 
 # Flush thresholds
 FLUSH_TIME_THRESHOLD = 300  # 5 minutes in seconds
@@ -109,6 +132,169 @@ def generate_uuid():
     ts = int(time.monotonic() * 1000000)
     return struct.pack('<QQ', ts, ts ^ 0xDEADBEEF12345678)
 
+# =============================================================================
+# Hardware Block
+# =============================================================================
+
+class HardwareConfigBlock:
+    """
+    Hardware configuration block - describes what hardware is connected
+    
+    This block is optional but recommended. It documents the exact hardware
+    setup used for this session, making it easier to analyze data later.
+    """
+    
+    def __init__(self):
+        self.items = []  # List of (hw_type, conn_type, identifier) tuples
+    
+    def add_hardware(self, hw_type, conn_type, identifier):
+        """
+        Add hardware item
+        
+        Args:
+            hw_type: Hardware type constant (HW_TYPE_*)
+            conn_type: Connection type constant (CONN_TYPE_*)
+            identifier: String identifier (e.g., "LIS3DH@0x18", "TX:GP0 RX:GP1")
+        """
+        if len(self.items) >= MAX_HARDWARE_ITEMS:
+            return False
+        
+        # Truncate identifier to 31 chars max
+        identifier = identifier[:31]
+        self.items.append((hw_type, conn_type, identifier))
+        return True
+    
+    def to_bytes(self):
+        """Serialize to bytes"""
+        block = bytearray()
+        
+        # Magic + Block Type
+        block.extend(MAGIC)
+        block.append(BLOCK_TYPE_HARDWARE_CONFIG)
+        
+        # Number of hardware items
+        block.append(len(self.items))
+        
+        # Each hardware item: type (1) + conn_type (1) + id_len (1) + identifier (N)
+        for hw_type, conn_type, identifier in self.items:
+            block.append(hw_type)
+            block.append(conn_type)
+            
+            id_bytes = identifier.encode('utf-8')
+            block.append(len(id_bytes))
+            block.extend(id_bytes)
+        
+        # CRC of entire block (using your existing crc32 function)
+        block_crc = crc32(bytes(block))
+        block.extend(struct.pack('<I', block_crc))
+        
+        return bytes(block)
+    
+    @staticmethod
+    def from_hardware_setup():
+        """
+        Create hardware config block from current hardware setup
+        
+        Returns:
+            HardwareConfigBlock or None
+        """
+        try:
+            from hardware_config import hw_config
+            
+            hw_block = HardwareConfigBlock()
+            
+            # Accelerometer
+            if hw_config.is_enabled("sensors.accelerometer"):
+                accel_type = hw_config.get("sensors.accelerometer.type", "Unknown")
+                i2c_addr = hw_config.get("sensors.accelerometer.i2c_address", "0x18")
+                hw_block.add_hardware(
+                    HW_TYPE_ACCELEROMETER,
+                    CONN_TYPE_I2C,
+                    f"{accel_type}@{i2c_addr}"
+                )
+            
+            # GPS
+            if hw_config.is_enabled("gps"):
+                gps_type = hw_config.get("gps.type", "Unknown")
+                tx = hw_config.get("interfaces.uart_gps.tx", "?")
+                rx = hw_config.get("interfaces.uart_gps.rx", "?")
+                hw_block.add_hardware(
+                    HW_TYPE_GPS,
+                    CONN_TYPE_UART,
+                    f"{gps_type} TX:{tx} RX:{rx}"
+                )
+            
+            # Display
+            if hw_config.is_enabled("display.oled"):
+                display_type = hw_config.get("display.oled.type", "Unknown")
+                i2c_addr = hw_config.get("display.oled.i2c_address", "0x3C")
+                hw_block.add_hardware(
+                    HW_TYPE_DISPLAY,
+                    CONN_TYPE_I2C,
+                    f"{display_type}@{i2c_addr}"
+                )
+            
+            # Storage
+            if hw_config.is_enabled("storage.sdcard"):
+                sck = hw_config.get("interfaces.spi.sck", "?")
+                cs = hw_config.get("storage.sdcard.cs_pin", "?")
+                hw_block.add_hardware(
+                    HW_TYPE_STORAGE,
+                    CONN_TYPE_SPI,
+                    f"SD SCK:{sck} CS:{cs}"
+                )
+            
+            # RTC
+            if hw_config.is_enabled("rtc"):
+                rtc_type = hw_config.get("rtc.type", "builtin")
+                if rtc_type == "pcf8523":
+                    i2c_addr = hw_config.get("rtc.i2c_address", "0x68")
+                    hw_block.add_hardware(
+                        HW_TYPE_RTC,
+                        CONN_TYPE_I2C,
+                        f"PCF8523@{i2c_addr}"
+                    )
+                else:
+                    hw_block.add_hardware(
+                        HW_TYPE_RTC,
+                        CONN_TYPE_BUILTIN,
+                        "Pico Internal RTC"
+                    )
+            
+            # Heartbeat LED
+            if hw_config.is_enabled("indicators.heartbeat_led"):
+                pin = hw_config.get("indicators.heartbeat_led.pin", "?")
+                hw_block.add_hardware(
+                    HW_TYPE_LED,
+                    CONN_TYPE_GPIO,
+                    f"Heartbeat {pin}"
+                )
+            
+            # NeoPixel
+            if hw_config.is_enabled("indicators.neopixel_jewel"):
+                pin = hw_config.get("indicators.neopixel_jewel.pin", "?")
+                num = hw_config.get("indicators.neopixel_jewel.num_pixels", 7)
+                hw_block.add_hardware(
+                    HW_TYPE_NEOPIXEL,
+                    CONN_TYPE_GPIO,
+                    f"{num}px on {pin}"
+                )
+            
+            # Radio (ESP-01s)
+            if hw_config.is_enabled("radio.esp01s"):
+                tx = hw_config.get("interfaces.uart_esp.tx", "?")
+                rx = hw_config.get("interfaces.uart_esp.rx", "?")
+                hw_block.add_hardware(
+                    HW_TYPE_RADIO,
+                    CONN_TYPE_UART,
+                    f"ESP-01s TX:{tx} RX:{rx}"
+                )
+            
+            return hw_block if hw_block.items else None
+            
+        except Exception as e:
+            print(f"[HW Config] Failed to build hardware block: {e}")
+            return None
 
 # =============================================================================
 # Session Header
@@ -292,8 +478,21 @@ class BinaryLogger:
         self.bytes_written = None
     
     def start_session(self, session_name="", driver_name="", vehicle_id="",
-                     weather=WEATHER_UNKNOWN, ambient_temp=0, config_crc=0):
-        """Start a new logging session"""
+                     weather=WEATHER_UNKNOWN, ambient_temp=0, config_crc=0,
+                     include_hardware=True
+        ):
+        """
+        Start a new logging session
+    
+        Args:
+            session_name: Name of session
+            driver_name: Driver name
+            vehicle_id: Vehicle identifier
+            weather: Weather condition code
+            ambient_temp: Ambient temperature in °C
+            config_crc: Configuration CRC
+            include_hardware: If True, write hardware config block (default: True)  # <-- ADD THIS
+        """
         if self.active:
             self.stop_session()
         
@@ -323,6 +522,13 @@ class BinaryLogger:
         self.log_file = open(self.log_filename, 'wb')
         self.log_file.write(self.current_session.to_bytes())
         self.log_file.flush()
+
+        # Store hardware config
+        if include_hardware:
+            hw_block = HardwareConfigBlock.from_hardware_setup()
+            if hw_block:
+                self.log_file.write(hw_block.to_bytes())
+                print(f"[BinaryLog] Hardware config: {len(hw_block.items)} items")
         
         # Initialize first data block
         self.block_sequence = 0
