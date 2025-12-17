@@ -70,12 +70,19 @@ if hw_config.is_enabled("interfaces.i2c"):
             sda = i2c_pins.get('sda')
             scl = i2c_pins.get('scl')
             frequency = i2c_pins.get('frequency', 100000)
+            
+            # Verify pins are actual Pin objects
+            if sda is None or scl is None:
+                raise ValueError(f"Invalid I2C pins: SDA={sda}, SCL={scl}")
+            
             i2c = busio.I2C(scl, sda, frequency=frequency)
         
         hardware['i2c'] = i2c
         print("✓ I2C initialized")
     except Exception as e:
         print(f"✗ I2C error: {e}")
+        import traceback
+        traceback.print_exception(type(e), e, e.__traceback__)
         hardware['i2c'] = None
 
 # =============================================================================
@@ -322,3 +329,25 @@ def get_hardware(name):
 def list_hardware():
     """List all initialized hardware"""
     return list(hardware.keys())
+
+
+# =============================================================================
+# Direct Exports for Backward Compatibility
+# =============================================================================
+
+# Export hardware objects directly for easier access
+# These can be imported as: from hardware_setup import lis3dh, gps, display, etc.
+
+lis3dh = hardware.get('accelerometer')      # LIS3DH accelerometer
+gps = hardware.get('gps')                   # GPS module
+gps_uart = hardware.get('gps_uart')         # GPS UART
+display = hardware.get('display')           # OLED display
+display_bus = hardware.get('display_bus')   # Display bus
+sdcard = hardware.get('sdcard')             # SD card
+spi = hardware.get('spi')                   # SPI bus
+i2c = hardware.get('i2c')                   # I2C bus
+heartbeat = hardware.get('heartbeat')       # Heartbeat LED
+pixel = hardware.get('neopixel')            # NeoPixel Jewel
+esp_uart = hardware.get('esp_uart')         # ESP-01s UART
+esp_ready = hardware.get('esp_ready', False) # ESP ready flag
+rtc_clock = hardware.get('rtc')             # RTC

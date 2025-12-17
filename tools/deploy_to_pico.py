@@ -162,15 +162,13 @@ def deploy_python_modules(drive_path, backup=True):
         "config.py",
         "gps.py",
         "hardware_setup.py",
-	"hardware_config.py",
+        "hardware_config.py",
         "neopixel_handler.py",
         "oled.py",
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
         "utils.py",
-	"binary_logger.py",
-	"session_logger.py",
     ]
     
     src_dir = Path("circuitpython")
@@ -210,6 +208,56 @@ def deploy_python_modules(drive_path, backup=True):
     
     return all_success, files_copied, files_skipped
 
+def deploy_config_files(drive_path, backup=True):
+    """
+    Deploy configuration files from config/ directory to CIRCUITPY drive
+    Copies settings.toml and hardware.toml if they exist.
+    
+    Args:
+        drive_path: Path to CIRCUITPY drive
+        backup: If True, backup existing files
+    
+    Returns:
+        Tuple of (success, files_copied)
+    """
+    print_info("Deploying configuration files...")
+    
+    config_dir = Path("config")
+    config_files = ["settings.toml", "hardware.toml"]
+    
+    files_copied = 0
+    all_success = True
+    
+    for config_file in config_files:
+        src = config_dir / config_file
+        
+        # Check if config file exists
+        if not src.exists():
+            print_info(f"  {config_file} not found in config/, skipping")
+            continue
+        
+        dst = Path(drive_path) / config_file
+        
+        # Check if file needs updating
+        if files_differ(src, dst):
+            try:
+                copy_file_with_backup(src, dst, backup)
+                files_copied += 1
+            except Exception as e:
+                print_error(f"  Failed to deploy {config_file}: {e}")
+                all_success = False
+        else:
+            print_info(f"  Unchanged: {config_file}")
+    
+    if files_copied > 0:
+        print_success(f"Deployed {files_copied} config file(s)")
+    elif config_dir.exists():
+        print_info("No config files to deploy or all unchanged")
+    else:
+        print_info("No config directory found")
+    
+    return all_success, files_copied
+
 def clean_deployment(drive_path):
     """
     Clean existing deployment (remove old files)
@@ -226,14 +274,13 @@ def clean_deployment(drive_path):
         "config.py",
         "gps.py",
         "hardware_setup.py",
+        "hardware_config.py",
         "neopixel_handler.py",
         "oled.py",
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
         "utils.py",
-	"binary_logger.py",
-	"session_logger.py",
     ]
     
     files_removed = 0
@@ -284,7 +331,6 @@ def validate_deployment(drive_path):
         "code.py",
         "hardware_setup.py",
         "hardware_config.py",
-        "hardware.toml",
         "utils.py",
     ]
     
@@ -298,8 +344,6 @@ def validate_deployment(drive_path):
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
-	"binary_logger.py",
-	"session_logger.py",
     ]
     
     # Recommended libraries
@@ -354,6 +398,23 @@ def validate_deployment(drive_path):
     
     if libs_found < len(recommended_libs):
         print_warning(f"Only {libs_found}/{len(recommended_libs)} libraries found. Run: make install-deps")
+    
+    # Check for configuration files (optional but recommended)
+    print_info("Configuration files:")
+    config_files = ["settings.toml", "hardware.toml"]
+    config_found = 0
+    for file in config_files:
+        file_path = Path(drive_path) / file
+        if file_path.exists():
+            size = file_path.stat().st_size
+            print_success(f"  {file} ({size:,} bytes)")
+            config_found += 1
+        else:
+            print_info(f"  Not found: {file} (will use defaults)")
+    
+    if config_found == 0:
+        print_info("No config files found - using default settings")
+        print_info("To customize: copy config/*.toml to config/ directory and redeploy")
     
     return all_valid
 
@@ -567,6 +628,11 @@ Examples:
         print_info("All modules are up to date!")
     elif copied > 0:
         print_success(f"Successfully deployed {copied} updated module(s)")
+    
+    # Deploy configuration files (settings.toml, hardware.toml)
+    config_success, config_copied = deploy_config_files(drive_path, backup=not args.no_backup)
+    if config_copied > 0:
+        print_success(f"Deployed {config_copied} configuration file(s)")
     
     # Install dependencies if requested
     if args.install_deps:

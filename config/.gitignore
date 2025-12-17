@@ -1,0 +1,8 @@
+# Ignore personal configuration files
+settings.toml
+hardware.toml
+
+# Keep example files
+!settings.toml.example
+!hardware.toml.example
+!README.md
