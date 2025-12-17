@@ -291,11 +291,29 @@ if hw_config.is_enabled("radio.esp01s"):
 
 if hw_config.is_enabled("rtc"):
     try:
-        rtc_clock = rtc.RTC()
-        hardware['rtc'] = rtc_clock
-        print("✓ RTC initialized")
+        from pcf8523_rtc import setup_rtc
+        
+        # Get I2C bus if needed for external RTC
+        i2c_bus = hardware.get('i2c')
+        
+        # Setup RTC (handles both builtin and PCF8523)
+        rtc_handler = setup_rtc(hw_config, i2c=i2c_bus)
+        
+        if rtc_handler:
+            # PCF8523 handler
+            hardware['rtc'] = rtc_handler
+            hardware['rtc_type'] = 'pcf8523'
+        else:
+            # Built-in RTC
+            rtc_clock = rtc.RTC()
+            hardware['rtc'] = rtc_clock
+            hardware['rtc_type'] = 'builtin'
+            print("✓ RTC initialized (built-in)")
+            
     except Exception as e:
         print(f"✗ RTC error: {e}")
+        import traceback
+        traceback.print_exc()
 
 # =============================================================================
 # Summary
@@ -329,6 +347,70 @@ def get_hardware(name):
 def list_hardware():
     """List all initialized hardware"""
     return list(hardware.keys())
+
+
+def get_rtc_handler():
+    """
+    Get RTC handler
+    
+    Returns:
+        PCF8523Handler if using PCF8523, rtc.RTC if builtin, or None
+    """
+    return hardware.get('rtc')
+
+
+def get_rtc_type():
+    """
+    Get RTC type
+    
+    Returns:
+        str: 'pcf8523', 'builtin', or None
+    """
+    return hardware.get('rtc_type')
+
+
+def set_system_time(year, month, day, hour, minute, second):
+    """
+    Set system time (and optionally sync to RTC)
+    
+    Args:
+        year, month, day, hour, minute, second: Time components
+    """
+    rtc_handler = get_rtc_handler()
+    rtc_type = get_rtc_type()
+    
+    if rtc_type == 'pcf8523' and rtc_handler:
+        # PCF8523 handler has set_time that syncs both
+        rtc_handler.set_time(year, month, day, hour, minute, second)
+    else:
+        # Set built-in RTC directly
+        new_time = time.struct_time((
+            year, month, day,
+            hour, minute, second,
+            0, -1, -1
+        ))
+        rtc.RTC().datetime = new_time
+        print(f"[RTC] System time set: {year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
+
+
+def get_time_string():
+    """
+    Get current time as formatted string
+    
+    Returns:
+        str: Time in YYYY-MM-DD HH:MM:SS format
+    """
+    rtc_handler = get_rtc_handler()
+    rtc_type = get_rtc_type()
+    
+    if rtc_type == 'pcf8523' and rtc_handler:
+        return rtc_handler.get_time_string()
+    else:
+        current = time.localtime()
+        return "{:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(
+            current.tm_year, current.tm_mon, current.tm_mday,
+            current.tm_hour, current.tm_min, current.tm_sec
+        )
 
 
 # =============================================================================
