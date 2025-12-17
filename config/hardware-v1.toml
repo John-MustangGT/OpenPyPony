@@ -111,7 +111,7 @@ height = 64
 
 [indicators.heartbeat_led]
 enabled = true
-pin = "GP25"        # Onboard LED
+pin = "LED"        # Onboard LED
 blink_rate = 1.0    # Hz
 
 [indicators.neopixel_jewel]
@@ -147,7 +147,10 @@ ready_timeout = 5.0     # seconds to wait for ready message
 
 [rtc]
 enabled = true
-type = "builtin"    # Pico's internal RTC
+type = "pcf8523"        # Options: "builtin" (Pico internal), "pcf8523" (Adafruit RTC)
+i2c_address = "0x68"    # PCF8523 default address
+sync_from_rtc = true    # If true, set system time from RTC on boot
+sync_to_rtc = true      # If true, write system time to RTC when time is set
 timezone_offset = -5    # Hours from UTC (e.g., -5 for EST, -8 for PST)
 auto_dst = true         # Automatically apply DST
 
