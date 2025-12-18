@@ -27,11 +27,15 @@ MAGIC_BYTES = b'OPNY'
 FORMAT_VERSION_MAJOR = 2
 FORMAT_VERSION_MINOR = 0
 
-# Block types
+# Block types (v2.0 spec)
 BLOCK_TYPE_SESSION_HEADER = 0x01
 BLOCK_TYPE_HARDWARE_CONFIG = 0x02
 BLOCK_TYPE_DATA_BLOCK = 0x03
 BLOCK_TYPE_SESSION_END = 0x04
+
+# Old block types (for compatibility with older firmware)
+BLOCK_TYPE_DATA_BLOCK_OLD = 0x02  # Old firmware used 0x02 for data blocks
+BLOCK_TYPE_SESSION_END_OLD = 0x03  # Old firmware used 0x03 for session end
 
 # Hardware types
 HW_TYPE_MAP = {
@@ -99,6 +103,7 @@ class OPLTimestamp:
     - Convert to datetime objects
     - Calculate durations
     - Find verified time ranges
+    - Format for display
     """
     
     # Threshold: timestamps below this are monotonic (< ~16 minutes uptime)
@@ -142,6 +147,42 @@ class OPLTimestamp:
     def to_duration(timestamp_us: int) -> timedelta:
         """Convert timestamp to duration (for monotonic time)"""
         return timedelta(microseconds=timestamp_us)
+    
+    @staticmethod
+    def format_for_display(timestamp_us: int, show_type: bool = False) -> str:
+        """
+        Format timestamp for human-readable display
+        
+        Args:
+            timestamp_us: Timestamp in microseconds
+            show_type: If True, append (monotonic) or (RTC) indicator
+        
+        Returns:
+            Formatted string appropriate for display
+        """
+        if OPLTimestamp.is_monotonic(timestamp_us):
+            duration = OPLTimestamp.to_duration(timestamp_us)
+            suffix = " (monotonic)" if show_type else " since boot"
+            return f"{duration}{suffix}"
+        else:
+            dt = OPLTimestamp.to_datetime(timestamp_us)
+            suffix = " (RTC)" if show_type else ""
+            return f"{dt.strftime('%Y-%m-%d %H:%M:%S')}{suffix}"
+    
+    @staticmethod
+    def format_for_csv_header(timestamp_us: int) -> str:
+        """
+        Format timestamp for CSV header comment
+        
+        Returns:
+            String suitable for CSV header (no newlines)
+        """
+        dt = OPLTimestamp.to_datetime(timestamp_us)
+        if dt:
+            return str(dt)
+        else:
+            duration = OPLTimestamp.to_duration(timestamp_us)
+            return f"Not synced ({duration} since boot)"
     
     @staticmethod
     def find_verified_range(timestamps: List[int]) -> Optional[tuple]:

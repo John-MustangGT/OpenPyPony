@@ -236,7 +236,7 @@ class OPLInspector:
         print(f"Session Name:    {h['session_name']}")
         print(f"Driver:          {h['driver_name']}")
         print(f"Vehicle:         {h['vehicle_id']}")
-        print(f"Timestamp:       {h['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}")
+        print(f"Timestamp:       {OPLTimestamp.format_for_display(h['timestamp_us'])}")
         print(f"Weather:         {h['weather']}")
         print(f"Temperature:     {h['ambient_temp']:.1f}°C")
         print(f"Format Version:  {h['format_version']}")

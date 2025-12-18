@@ -25,6 +25,8 @@ from opl_types import (
     BLOCK_TYPE_HARDWARE_CONFIG,
     BLOCK_TYPE_DATA_BLOCK,
     BLOCK_TYPE_SESSION_END,
+    BLOCK_TYPE_DATA_BLOCK_OLD,
+    BLOCK_TYPE_SESSION_END_OLD,
     SAMPLE_TYPE_ACCELEROMETER,
     SAMPLE_TYPE_GPS_FIX,
     SAMPLE_TYPE_GPS_SATELLITES,
@@ -78,7 +80,7 @@ class OPLReader:
         # Read timestamp (microseconds since Unix epoch 1970-01-01)
         timestamp_us = struct.unpack('<Q', self.file.read(8))[0]
         timestamp_dt = OPLTimestamp.to_datetime(timestamp_us)
-        self.log(f"Session start: {timestamp_dt}")
+        self.log(f"Session start: {OPLTimestamp.format_for_display(timestamp_us, show_type=True)}")
         
         # Read session ID (16 bytes UUID)
         session_id = self.file.read(16).hex()
@@ -133,6 +135,7 @@ class OPLReader:
         self.session_header = {
             'format_version': f"{major}.{minor}",
             'hw_version': hw_version,
+            'timestamp_us': timestamp_us,
             'timestamp': timestamp_dt,
             'session_id': session_id,
             'session_name': session_name,
@@ -154,39 +157,75 @@ class OPLReader:
         """
         # Peek at next block type
         pos = self.file.tell()
-        magic = self.file.read(4)
+        peek_data = self.file.read(5)  # magic (4) + block_type (1)
         
-        if magic != MAGIC_BYTES:
-            # Restore position and return
+        if len(peek_data) < 5:
+            # Not enough data, no hardware config
             self.file.seek(pos)
             return None
         
-        block_type = struct.unpack('B', self.file.read(1))[0]
+        magic = peek_data[:4]
+        block_type = peek_data[4]
+        
+        # Restore position
+        self.file.seek(pos)
+        
+        # Check if this looks like a hardware config block
+        if magic != MAGIC_BYTES:
+            self.log("No hardware config block (no magic bytes)")
+            return None
         
         if block_type != BLOCK_TYPE_HARDWARE_CONFIG:
-            # Not a hardware config block, restore position
+            self.log(f"Next block is type {block_type:#x}, not hardware config")
+            return None
+        
+        # Read the actual block
+        self.file.read(4)  # Skip magic bytes
+        actual_block_type = struct.unpack('<B', self.file.read(1))[0]
+        
+        if actual_block_type != BLOCK_TYPE_HARDWARE_CONFIG:
+            # Shouldn't happen, but just in case
             self.file.seek(pos)
             return None
         
         self.log("Reading hardware config block...")
         
         # Read number of items
-        item_count = struct.unpack('B', self.file.read(1))[0]
+        item_count = struct.unpack('<B', self.file.read(1))[0]
+        
+        # Sanity check: hardware config shouldn't have > 20 items
+        if item_count > 20:
+            self.log(f"WARNING: Suspicious item count ({item_count}), skipping hardware config")
+            self.file.seek(pos)
+            return None
         
         hardware_items = []
-        for i in range(item_count):
-            hw_type = struct.unpack('B', self.file.read(1))[0]
-            conn_type = struct.unpack('B', self.file.read(1))[0]
-            id_len = struct.unpack('B', self.file.read(1))[0]
-            identifier = self.file.read(id_len).decode('utf-8')
-            
-            hardware_items.append({
-                'type': HW_TYPE_MAP.get(hw_type, f"Unknown(0x{hw_type:02X})"),
-                'connection': CONN_TYPE_MAP.get(conn_type, f"Unknown(0x{conn_type:02X})"),
-                'identifier': identifier
-            })
-            
-            self.log(f"  {hardware_items[-1]['type']}: {hardware_items[-1]['identifier']} ({hardware_items[-1]['connection']})")
+        try:
+            for i in range(item_count):
+                hw_type = struct.unpack('<B', self.file.read(1))[0]
+                conn_type = struct.unpack('<B', self.file.read(1))[0]
+                id_len = struct.unpack('<B', self.file.read(1))[0]
+                
+                # Sanity check: identifier shouldn't be > 64 bytes
+                if id_len > 64:
+                    self.log(f"WARNING: Suspicious identifier length ({id_len}), skipping hardware config")
+                    self.file.seek(pos)
+                    return None
+                
+                identifier = self.file.read(id_len).decode('utf-8', errors='replace')
+                
+                hardware_items.append({
+                    'type': HW_TYPE_MAP.get(hw_type, f"Unknown(0x{hw_type:02X})"),
+                    'connection': CONN_TYPE_MAP.get(conn_type, f"Unknown(0x{conn_type:02X})"),
+                    'identifier': identifier
+                })
+                
+                self.log(f"  {hardware_items[-1]['type']}: {hardware_items[-1]['identifier']} ({hardware_items[-1]['connection']})")
+        except Exception as e:
+            self.log(f"ERROR reading hardware config: {e}")
+            # Restore position and skip this block
+            self.file.seek(pos)
+            return None
         
         # Read and verify CRC
         crc_expected = struct.unpack('<I', self.file.read(4))[0]
@@ -220,13 +259,18 @@ class OPLReader:
         # Read block type
         block_type = struct.unpack('<B', self.file.read(1))[0]
         
-        if block_type == BLOCK_TYPE_SESSION_END:
+        # Check for session end (both old and new numbering)
+        if block_type == BLOCK_TYPE_SESSION_END or block_type == BLOCK_TYPE_SESSION_END_OLD:
             self.log("Reached session end block")
             return None
         
-        if block_type != BLOCK_TYPE_DATA_BLOCK:
+        # Check for data block (both old and new numbering)
+        if block_type != BLOCK_TYPE_DATA_BLOCK and block_type != BLOCK_TYPE_DATA_BLOCK_OLD:
             self.log(f"Unknown block type: {block_type:#x}")
             return None
+        
+        if block_type == BLOCK_TYPE_DATA_BLOCK_OLD:
+            self.log("Note: Using old block type numbering (0x02 for data block)")
         
         # Read session ID
         session_id = self.file.read(16).hex()
@@ -386,7 +430,7 @@ class OPLReader:
             f.write(f"# Session: {h['session_name']}\n")
             f.write(f"# Driver: {h['driver_name']}\n")
             f.write(f"# Vehicle: {h['vehicle_id']}\n")
-            f.write(f"# Date: {h['timestamp']}\n")
+            f.write(f"# Date: {OPLTimestamp.format_for_csv_header(h['timestamp_us'])}\n")
             f.write(f"# Weather: {h['weather']}, {h['ambient_temp']}°C\n")
             f.write(f"# Format: {h['format_version']}\n")
             f.write(f"# Hardware: {h['hw_version']}\n")
