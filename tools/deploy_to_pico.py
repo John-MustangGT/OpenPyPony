@@ -141,6 +141,82 @@ def files_differ(src, dst):
     with open(src, 'rb') as f1, open(dst, 'rb') as f2:
         return f1.read() != f2.read()
 
+def check_for_unknown_files(drive_path, known_files, src_dir):
+    """
+    Warn about .py files on drive that aren't in our deployment list
+    AND check for .py files in repo that aren't being deployed
+    Helps catch orphaned files from old versions or manual copies
+    
+    Args:
+        drive_path: Path to CIRCUITPY drive
+        known_files: Set of filenames we know about
+        src_dir: Path to circuitpython/ source directory
+    
+    Returns:
+        Tuple of (unknown_on_drive, unknown_in_repo)
+    """
+    print_info("Checking for unknown Python files...")
+    
+    unknown_on_drive = []
+    unknown_in_repo = []
+    
+    # Check 1: Files on drive not in deployment list
+    try:
+        # Get all .py files in root of drive
+        drive_files = set()
+        for item in os.listdir(drive_path):
+            # Ignore macOS metadata files (._*)
+            if item.endswith('.py') and not item.startswith('._') and os.path.isfile(os.path.join(drive_path, item)):
+                drive_files.add(item)
+        
+        # Find unknowns (on drive but not in our list)
+        unknown_on_drive = list(drive_files - known_files)
+        
+        if unknown_on_drive:
+            print_warning(f"Found {len(unknown_on_drive)} unknown .py file(s) on CIRCUITPY:")
+            for fname in sorted(unknown_on_drive):
+                print(f"  ⚠️  {fname}")
+            print_info("These might be:")
+            print_info("  - Old versions from manual copies")
+            print_info("  - Missing from deployment list")
+            print_info("  - Files from previous firmware")
+            print_info("  - Test scripts you created")
+            print_info("Consider removing them or adding to deployment list.")
+        else:
+            print_success("No unknown Python files found on drive")
+            
+    except Exception as e:
+        print_warning(f"Could not check drive for unknown files: {e}")
+    
+    # Check 2: Files in repo not being deployed
+    print()
+    try:
+        if src_dir.exists():
+            # Get all .py files in source directory
+            repo_files = set()
+            for item in os.listdir(src_dir):
+                if item.endswith('.py') and os.path.isfile(src_dir / item):
+                    repo_files.add(item)
+            
+            # Find files in repo not in deployment list
+            unknown_in_repo = list(repo_files - known_files)
+            
+            if unknown_in_repo:
+                print_warning(f"Found {len(unknown_in_repo)} .py file(s) in circuitpython/ NOT being deployed:")
+                for fname in sorted(unknown_in_repo):
+                    print(f"  ⚠️  {fname}")
+                print_info("These files exist in your repo but won't be deployed.")
+                print_info("If needed, add them to the deployment list in deploy_to_pico.py")
+            else:
+                print_success("All Python files in repo are being deployed")
+        else:
+            print_warning(f"Source directory not found: {src_dir}")
+            
+    except Exception as e:
+        print_warning(f"Could not check repo for undeployed files: {e}")
+    
+    return unknown_on_drive, unknown_in_repo
+
 def deploy_python_modules(drive_path, backup=True):
     """
     Deploy all Python modules from circuitpython/ to CIRCUITPY drive
@@ -160,7 +236,6 @@ def deploy_python_modules(drive_path, backup=True):
         "code.py",
         "debug.py",
         "accelerometer.py",
-        "session_logger.py",
         "binary_logger.py",
         "config.py",
         "gps.py",
@@ -172,8 +247,12 @@ def deploy_python_modules(drive_path, backup=True):
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
+        "session_logger.py",  # Added!
         "utils.py",
     ]
+    
+    # Create set of known files for orphan detection
+    known_files = set(python_modules)
     
     src_dir = Path("circuitpython")
     if not src_dir.exists():
@@ -209,6 +288,10 @@ def deploy_python_modules(drive_path, backup=True):
         print_success(f"Deployed {files_copied} module(s)")
     if files_skipped > 0:
         print_info(f"Skipped {files_skipped} unchanged module(s)")
+    
+    # Check for unknown files on drive and undeployed files in repo
+    print()
+    unknown_on_drive, unknown_in_repo = check_for_unknown_files(drive_path, known_files, src_dir)
     
     return all_success, files_copied, files_skipped
 
@@ -276,7 +359,6 @@ def clean_deployment(drive_path):
         "code.py",
         "debug.py",
         "accelerometer.py",
-        "session_logger.py",
         "binary_logger.py",
         "config.py",
         "gps.py",
@@ -288,6 +370,7 @@ def clean_deployment(drive_path):
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
+        "session_logger.py",
         "utils.py",
     ]
     
@@ -346,7 +429,6 @@ def validate_deployment(drive_path):
     # Optional modules (warn if missing but don't fail)
     optional_files = [
         "accelerometer.py",
-        "session_logger.py",
         "binary_logger.py",
         "config.py",
         "gps.py",
@@ -356,6 +438,7 @@ def validate_deployment(drive_path):
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
+        "session_logger.py",
     ]
     
     # Recommended libraries
