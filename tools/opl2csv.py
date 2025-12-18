@@ -14,67 +14,28 @@ import struct
 import sys
 import argparse
 from pathlib import Path
-from datetime import datetime
-import hashlib
+from datetime import datetime, timedelta
 
-# Magic bytes and constants
-MAGIC_BYTES = b'OPNY'
-FORMAT_VERSION_MAJOR = 2
-FORMAT_VERSION_MINOR = 0
-
-# Block types
-BLOCK_TYPE_SESSION_HEADER = 0x01
-BLOCK_TYPE_DATA_BLOCK = 0x02
-BLOCK_TYPE_SESSION_END = 0x03
-BLOCK_TYPE_HARDWARE_CONFIG = 0x04
-
-# Hardware types
-HW_TYPE_MAP = {
-    0x01: "Accelerometer",
-    0x02: "GPS",
-    0x03: "Display",
-    0x04: "Storage",
-    0x05: "RTC",
-    0x06: "LED",
-    0x07: "NeoPixel",
-    0x08: "Radio",
-    0x09: "OBD",
-    0x0A: "CAN"
-}
-
-# Connection types
-CONN_TYPE_MAP = {
-    0x01: "I2C",
-    0x02: "SPI",
-    0x03: "UART",
-    0x04: "GPIO",
-    0x05: "STEMMA QT",
-    0x06: "Built-in"
-}
-
-# Sample types
-SAMPLE_TYPE_ACCELEROMETER = 0x01
-SAMPLE_TYPE_GPS_FIX = 0x02
-SAMPLE_TYPE_GPS_SATELLITES = 0x03
-SAMPLE_TYPE_OBD_PID = 0x10
-SAMPLE_TYPE_EVENT_MARKER = 0x20
-
-# Weather conditions
-WEATHER_MAP = {
-    0: "Unknown",
-    1: "Clear",
-    2: "Cloudy",
-    3: "Rain",
-    4: "Snow",
-    5: "Fog"
-}
-
-# Flush flags
-FLUSH_FLAG_TIME = 0x01
-FLUSH_FLAG_SIZE = 0x02
-FLUSH_FLAG_EVENT = 0x04
-FLUSH_FLAG_MANUAL = 0x08
-FLUSH_FLAG_SHUTDOWN = 0x10
+# Import from shared opl_types module
+from opl_types import (
+    MAGIC_BYTES,
+    FORMAT_VERSION_MAJOR,
+    FORMAT_VERSION_MINOR,
+    BLOCK_TYPE_SESSION_HEADER,
+    BLOCK_TYPE_HARDWARE_CONFIG,
+    BLOCK_TYPE_DATA_BLOCK,
+    BLOCK_TYPE_SESSION_END,
+    SAMPLE_TYPE_ACCELEROMETER,
+    SAMPLE_TYPE_GPS_FIX,
+    SAMPLE_TYPE_GPS_SATELLITES,
+    SAMPLE_TYPE_OBD_PID,
+    SAMPLE_TYPE_EVENT_MARKER,
+    WEATHER_MAP,
+    HW_TYPE_MAP,
+    CONN_TYPE_MAP,
+    OPLTimestamp,
+    SampleParser
+)
 
 
 class OPLReader:
@@ -114,12 +75,9 @@ class OPLReader:
         hw_version = f"{hw_major}.{hw_minor}"
         self.log(f"Hardware version: {hw_version}")
         
-        # Read timestamp (microseconds since epoch)
+        # Read timestamp (microseconds since Unix epoch 1970-01-01)
         timestamp_us = struct.unpack('<Q', self.file.read(8))[0]
-        # Convert to datetime (CircuitPython epoch is 2000-01-01)
-        epoch_2000 = datetime(2000, 1, 1)
-        timestamp = epoch_2000.timestamp() + (timestamp_us / 1_000_000)
-        timestamp_dt = datetime.fromtimestamp(timestamp)
+        timestamp_dt = OPLTimestamp.to_datetime(timestamp_us)
         self.log(f"Session start: {timestamp_dt}")
         
         # Read session ID (16 bytes UUID)
@@ -128,30 +86,45 @@ class OPLReader:
         
         # Read session name (1 byte length + string)
         name_len = struct.unpack('<B', self.file.read(1))[0]
-        session_name = self.file.read(name_len).decode('utf-8')
+        session_name = self.file.read(name_len).decode('utf-8', errors='replace')
         
         # Read driver name (1 byte length + string)
         driver_len = struct.unpack('<B', self.file.read(1))[0]
-        driver_name = self.file.read(driver_len).decode('utf-8')
+        driver_name = self.file.read(driver_len).decode('utf-8', errors='replace')
         
         # Read vehicle ID (1 byte length + string)
         vehicle_len = struct.unpack('<B', self.file.read(1))[0]
-        vehicle_id = self.file.read(vehicle_len).decode('utf-8')
+        vehicle_id = self.file.read(vehicle_len).decode('utf-8', errors='replace')
         
-        # Read weather condition
-        weather_code = struct.unpack('<B', self.file.read(1))[0]
-        weather = WEATHER_MAP.get(weather_code, "Unknown")
+        # Read weather condition and ambient temp (OPTIONAL - may not be present in older files)
+        weather = "Unknown"
+        ambient_temp = 0.0
         
-        # Read ambient temperature (0.1°C resolution)
-        temp_raw = struct.unpack('<h', self.file.read(2))[0]
-        ambient_temp = temp_raw / 10.0
+        # Peek ahead to see if we have weather data or if next block starts
+        peek_pos = self.file.tell()
+        next_byte = self.file.read(1)
         
-        # Read config CRC32
-        config_crc = struct.unpack('<I', self.file.read(4))[0]
-        
-        # Read header CRC32 (checksum of all header data)
-        header_crc = struct.unpack('<I', self.file.read(4))[0]
-        self.log(f"Header CRC: {header_crc:#010x}")
+        if next_byte and next_byte[0] < 10:  # Weather code is 0-9
+            # This looks like weather data, continue reading
+            weather_code = next_byte[0]
+            weather = WEATHER_MAP.get(weather_code, "Unknown")
+            
+            # Read ambient temperature (0.1°C resolution)
+            temp_raw = struct.unpack('<h', self.file.read(2))[0]
+            ambient_temp = temp_raw / 10.0
+            
+            # Read config CRC32
+            config_crc = struct.unpack('<I', self.file.read(4))[0]
+            
+            # Read header CRC32 (checksum of all header data)
+            header_crc = struct.unpack('<I', self.file.read(4))[0]
+            self.log(f"Header CRC: {header_crc:#010x}")
+        else:
+            # No weather data, rewind to before peek
+            self.file.seek(peek_pos)
+            config_crc = 0
+            header_crc = 0
+            self.log("Note: Weather/temp fields not present (older format)")
         
         # Debug: show file position
         file_pos = self.file.tell()
@@ -319,44 +292,31 @@ class OPLReader:
             
             # Parse based on type
             if sample_type == SAMPLE_TYPE_ACCELEROMETER:
-                # 3x float32 (12 bytes)
-                if sample_len >= 12:
-                    gx, gy, gz = struct.unpack('<fff', sample_data[:12])
+                accel = SampleParser.parse_accelerometer(sample_data)
+                if accel:
                     samples.append({
                         'type': 'accel',
                         'timestamp_us': timestamp_us,
-                        'gx': gx,
-                        'gy': gy,
-                        'gz': gz
+                        **accel
                     })
             
             elif sample_type == SAMPLE_TYPE_GPS_FIX:
-                # lat, lon, alt, speed, heading, hdop (6x float32 = 24 bytes)
-                if sample_len >= 24:
-                    lat, lon, alt, speed, heading, hdop = struct.unpack('<ffffff', sample_data[:24])
+                gps = SampleParser.parse_gps_fix(sample_data)
+                if gps:
                     samples.append({
                         'type': 'gps',
                         'timestamp_us': timestamp_us,
-                        'lat': lat,
-                        'lon': lon,
-                        'alt': alt,
-                        'speed': speed,
-                        'heading': heading,
-                        'hdop': hdop
+                        **gps
                     })
             
             elif sample_type == SAMPLE_TYPE_GPS_SATELLITES:
-                # Variable length satellite data
-                sat_count = sample_len // 3  # Each sat: id (1) + snr (1) + flags (1)
-                satellites = []
-                for i in range(sat_count):
-                    sat_id, snr, flags = struct.unpack('<BBB', sample_data[i*3:i*3+3])
-                    satellites.append({'id': sat_id, 'snr': snr, 'flags': flags})
-                samples.append({
-                    'type': 'satellites',
-                    'timestamp_us': timestamp_us,
-                    'satellites': satellites
-                })
+                satellites = SampleParser.parse_gps_satellites(sample_data)
+                if satellites:
+                    samples.append({
+                        'type': 'satellites',
+                        'timestamp_us': timestamp_us,
+                        'satellites': satellites
+                    })
         
         return samples
     
@@ -381,8 +341,18 @@ class OPLReader:
         self.log(f"Read {len(self.data_blocks)} data blocks")
         return self.session_header, self.data_blocks
     
-    def to_csv(self, output_path=None):
-        """Convert to CSV format"""
+    def to_csv(self, output_path=None, drop_bad_time=False, patch_time_jumps=False,
+               time_threshold=946684800000000, jump_threshold=60.0):
+        """
+        Convert to CSV format with optional timestamp filtering and patching
+        
+        Args:
+            output_path: Output CSV file path
+            drop_bad_time: Drop samples with timestamps below threshold
+            patch_time_jumps: Smooth out large time jumps
+            time_threshold: Minimum valid timestamp (microseconds)
+            jump_threshold: Maximum time jump to allow (seconds)
+        """
         if output_path is None:
             output_path = self.filepath.with_suffix('.csv')
         
@@ -397,6 +367,16 @@ class OPLReader:
         
         # Sort by timestamp
         all_samples.sort(key=lambda s: s['timestamp_us'])
+        
+        # Filter and patch timestamps
+        if drop_bad_time or patch_time_jumps:
+            all_samples = self._process_timestamps(
+                all_samples, 
+                drop_bad_time, 
+                patch_time_jumps,
+                time_threshold, 
+                jump_threshold
+            )
         
         # Write CSV
         with open(output_path, 'w') as f:
@@ -417,6 +397,13 @@ class OPLReader:
                 f.write(f"# Hardware Configuration ({self.hardware_config['count']} items):\n")
                 for item in self.hardware_config['items']:
                     f.write(f"#   {item['type']:<15} {item['connection']:<12} {item['identifier']}\n")
+            
+            # Add processing notes
+            if drop_bad_time:
+                f.write(f"#\n")
+                f.write(f"# Timestamp Filtering: Dropped samples < {time_threshold} µs (before RTC sync)\n")
+            if patch_time_jumps:
+                f.write(f"# Time Jump Patching: Smoothed jumps > {jump_threshold}s\n")
             
             f.write(f"#\n")
             
@@ -446,6 +433,83 @@ class OPLReader:
         print(f"  Satellite data: {sum(1 for s in all_samples if s['type'] == 'satellites')}")
         
         return output_path
+    
+    def _process_timestamps(self, samples, drop_bad_time, patch_time_jumps,
+                           time_threshold, jump_threshold):
+        """
+        Filter and patch timestamps
+        
+        Args:
+            samples: List of sample dictionaries
+            drop_bad_time: Drop samples below threshold
+            patch_time_jumps: Smooth out time jumps
+            time_threshold: Minimum valid timestamp (microseconds)
+            jump_threshold: Maximum time jump (seconds)
+        
+        Returns:
+            Processed list of samples
+        """
+        if not samples:
+            return samples
+        
+        processed = []
+        dropped_count = 0
+        patched_count = 0
+        
+        # Step 1: Drop samples with bad timestamps
+        if drop_bad_time:
+            for sample in samples:
+                if OPLTimestamp.is_rtc_synced(sample['timestamp_us']):
+                    processed.append(sample)
+                else:
+                    dropped_count += 1
+            
+            if dropped_count > 0:
+                print(f"  Dropped {dropped_count} samples with bad timestamps (before RTC sync)")
+            
+            samples = processed
+            processed = []
+        
+        # Step 2: Patch time jumps
+        if patch_time_jumps and len(samples) > 0:
+            # Convert jump threshold to microseconds
+            jump_threshold_us = jump_threshold * 1_000_000
+            
+            last_timestamp = samples[0]['timestamp_us']
+            time_offset = 0  # Accumulated offset from patching
+            
+            for sample in samples:
+                current_timestamp = sample['timestamp_us']
+                time_diff = current_timestamp - last_timestamp
+                
+                # Detect large forward jump (RTC sync)
+                if time_diff > jump_threshold_us:
+                    # Calculate offset needed to smooth this jump
+                    # We want to continue from last_timestamp with normal progression
+                    time_offset = last_timestamp - current_timestamp
+                    patched_count += 1
+                    
+                    if self.verbose:
+                        jump_sec = time_diff / 1_000_000
+                        print(f"  Detected time jump: {jump_sec:.1f}s at sample {len(processed)}")
+                        print(f"    From: {last_timestamp} µs")
+                        print(f"    To:   {current_timestamp} µs")
+                        print(f"    Applying offset: {time_offset} µs")
+                
+                # Apply accumulated offset
+                patched_sample = sample.copy()
+                patched_sample['timestamp_us'] = current_timestamp + time_offset
+                processed.append(patched_sample)
+                
+                last_timestamp = patched_sample['timestamp_us']
+            
+            if patched_count > 0:
+                print(f"  Patched {patched_count} time jumps > {jump_threshold}s")
+        else:
+            processed = samples
+        
+        return processed
+
 
 
 def main():
@@ -458,12 +522,33 @@ Examples:
   %(prog)s session_00001.opl -o output.csv
   %(prog)s session_00001.opl --verbose
   %(prog)s *.opl  # Convert all OPL files
+  
+  # Drop samples recorded before RTC sync (monotonic time)
+  %(prog)s session_00001.opl --drop-bad-time
+  
+  # Smooth out large time jumps (e.g., when RTC syncs mid-session)
+  %(prog)s session_00001.opl --patch-time-jumps
+  
+  # Combine both filters
+  %(prog)s session_00001.opl --drop-bad-time --patch-time-jumps
+  
+  # Custom thresholds
+  %(prog)s session_00001.opl --drop-bad-time --time-threshold 100000000
+  %(prog)s session_00001.opl --patch-time-jumps --jump-threshold 30.0
         """
     )
     
     parser.add_argument('input', nargs='+', help='Input .opl file(s)')
     parser.add_argument('-o', '--output', help='Output CSV file (default: same name as input)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Verbose output')
+    parser.add_argument('--drop-bad-time', action='store_true',
+                       help='Drop samples with unrealistic timestamps (before RTC sync)')
+    parser.add_argument('--patch-time-jumps', action='store_true',
+                       help='Smooth out large timestamp jumps (e.g., RTC sync during session)')
+    parser.add_argument('--time-threshold', type=int, default=946684800000000,
+                       help='Minimum valid timestamp in microseconds since Unix epoch (default: Jan 1 2000, filters monotonic time)')
+    parser.add_argument('--jump-threshold', type=float, default=60.0,
+                       help='Time jump threshold in seconds for patching (default: 60.0)')
     
     args = parser.parse_args()
     
@@ -498,7 +583,13 @@ Examples:
             
             # Convert to CSV
             output_path = args.output if args.output else None
-            reader.to_csv(output_path)
+            reader.to_csv(
+                output_path,
+                drop_bad_time=args.drop_bad_time,
+                patch_time_jumps=args.patch_time_jumps,
+                time_threshold=args.time_threshold,
+                jump_threshold=args.jump_threshold
+            )
             
         except Exception as e:
             print(f"✗ Error processing {input_path}: {e}")

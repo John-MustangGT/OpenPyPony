@@ -61,6 +61,7 @@ def main():
     last_display_update = 0
     last_telemetry_send = 0
     last_satellite_send = 0
+    last_satellite_log = 0
     last_neopixel_update = 0
     heartbeat_last_toggle = 0
     last_status_print = 0
@@ -101,6 +102,17 @@ def main():
                     sensor_data["gps"]["hdop"], 
                     sensor_data["t"]
                 )
+                # Log satellite data every 5 minutes (300 seconds)
+                if hw.gps.has_fix and now - last_satellite_log >= 300.0:
+                    last_satellite_log = now
+                    sat_data = gps.get_satellites_json()
+                    if sat_data and sat_data.get('satellites'):
+                        session.write_gps_satellites(
+                            sat_data['satellites'],
+                            sensor_data["t"]
+                        )
+                        if serial_debug:
+                            print(f"[Log] Satellites logged: {sat_data['count']} sats")
 
             # Update heartbeat LED (1Hz, 100ms on)
             now = time.monotonic()
@@ -111,7 +123,7 @@ def main():
                 hw.heartbeat.value = False
 
             # only sync RTC every minute
-            if now - last_rtc_update >= 60.0 and hw.gps.has_fix:
+            if hw.gps.has_fix and now - last_rtc_update >= 60.0:
                 last_rtc_update = now
                 rtc.sync_from_gps(gps.gps)
             

@@ -24,8 +24,15 @@ import sys
 import time
 import requests
 from pathlib import Path
-from datetime import datetime, timezone
-from opl2csv import OPLReader, SAMPLE_TYPE_GPS_FIX
+from datetime import datetime, timezone, timedelta
+
+# Import from shared modules
+from opl_types import (
+    SAMPLE_TYPE_GPS_FIX,
+    OPLTimestamp,
+    UnitConverter
+)
+from opl2csv import OPLReader
 
 class TraccarUploader:
     """Upload GPS data to Traccar server"""
@@ -135,7 +142,9 @@ class TraccarUploader:
             return False
     
     def upload_opl_file(self, opl_file, realtime=False, playback_speed=1.0, 
-                       batch_mode=False, batch_size=10):
+                       batch_mode=False, batch_size=10, drop_bad_time=False,
+                       patch_time_jumps=False, time_threshold=946684800000000,
+                       jump_threshold=60.0):
         """
         Upload all GPS positions from an OPL file to Traccar
         
@@ -145,6 +154,10 @@ class TraccarUploader:
             playback_speed: Speed multiplier (1.0=realtime, 2.0=2x speed, 0.5=half speed)
             batch_mode: Send positions in batches with progress updates
             batch_size: Number of positions per batch
+            drop_bad_time: Drop samples with timestamps below threshold
+            patch_time_jumps: Smooth out large time jumps
+            time_threshold: Minimum valid timestamp (microseconds)
+            jump_threshold: Maximum time jump to allow (seconds)
         
         Returns:
             Number of positions successfully uploaded
@@ -175,25 +188,30 @@ class TraccarUploader:
             print("✗ No GPS data found in file")
             return 0
         
-        print(f"Found {len(gps_samples)} GPS positions to upload")
+        print(f"Found {len(gps_samples)} GPS positions")
+        
+        # Filter and patch timestamps if requested
+        if drop_bad_time or patch_time_jumps:
+            gps_samples = self._process_timestamps(
+                gps_samples, drop_bad_time, patch_time_jumps,
+                time_threshold, jump_threshold
+            )
+            print(f"After filtering: {len(gps_samples)} GPS positions to upload")
+        
+        print()
         
         # Upload positions
         last_timestamp = None
         batch_count = 0
         
         for i, sample in enumerate(gps_samples, 1):
-            # Convert microseconds to datetime
-            # Note: If using monotonic time, this will be relative to 2000-01-01
+            # Convert microseconds to datetime (Unix epoch 1970-01-01)
             timestamp_us = sample['timestamp_us']
-            epoch_2000 = datetime(2000, 1, 1, tzinfo=timezone.utc)
-            timestamp_dt = datetime.fromtimestamp(
-                epoch_2000.timestamp() + (timestamp_us / 1_000_000),
-                tz=timezone.utc
-            )
+            timestamp_dt = OPLTimestamp.to_datetime(timestamp_us, tz=timezone.utc)
             
             # Convert speed from MPH to knots (Traccar expects knots)
             speed_mph = sample['speed']
-            speed_knots = speed_mph * 0.868976
+            speed_knots = UnitConverter.mph_to_knots(speed_mph)
             
             # Send position
             success = self.send_position(
@@ -243,6 +261,78 @@ class TraccarUploader:
         print()
         
         return self.points_sent
+    
+    def _process_timestamps(self, samples, drop_bad_time, patch_time_jumps,
+                           time_threshold, jump_threshold):
+        """
+        Filter and patch timestamps (same as opl2csv.py)
+        
+        Args:
+            samples: List of sample dictionaries
+            drop_bad_time: Drop samples below threshold
+            patch_time_jumps: Smooth out time jumps
+            time_threshold: Minimum valid timestamp (microseconds)
+            jump_threshold: Maximum time jump (seconds)
+        
+        Returns:
+            Processed list of samples
+        """
+        if not samples:
+            return samples
+        
+        processed = []
+        dropped_count = 0
+        patched_count = 0
+        
+        # Step 1: Drop samples with bad timestamps
+        if drop_bad_time:
+            for sample in samples:
+                if OPLTimestamp.is_rtc_synced(sample['timestamp_us']):
+                    processed.append(sample)
+                else:
+                    dropped_count += 1
+            
+            if dropped_count > 0:
+                print(f"  Dropped {dropped_count} GPS positions with bad timestamps")
+            
+            samples = processed
+            processed = []
+        
+        # Step 2: Patch time jumps
+        if patch_time_jumps and len(samples) > 0:
+            # Convert jump threshold to microseconds
+            jump_threshold_us = jump_threshold * 1_000_000
+            
+            last_timestamp = samples[0]['timestamp_us']
+            time_offset = 0  # Accumulated offset from patching
+            
+            for sample in samples:
+                current_timestamp = sample['timestamp_us']
+                time_diff = current_timestamp - last_timestamp
+                
+                # Detect large forward jump (RTC sync)
+                if time_diff > jump_threshold_us:
+                    # Calculate offset needed to smooth this jump
+                    time_offset = last_timestamp - current_timestamp
+                    patched_count += 1
+                    
+                    if self.verbose:
+                        jump_sec = time_diff / 1_000_000
+                        print(f"  Detected time jump: {jump_sec:.1f}s at position {len(processed)}")
+                
+                # Apply accumulated offset
+                patched_sample = sample.copy()
+                patched_sample['timestamp_us'] = current_timestamp + time_offset
+                processed.append(patched_sample)
+                
+                last_timestamp = patched_sample['timestamp_us']
+            
+            if patched_count > 0:
+                print(f"  Patched {patched_count} time jumps > {jump_threshold}s")
+        else:
+            processed = samples
+        
+        return processed
 
 
 def main():
@@ -299,6 +389,14 @@ Traccar Server Setup:
                        help='Verbose output (show each position sent)')
     parser.add_argument('--test', action='store_true',
                        help='Test connection to Traccar server only')
+    parser.add_argument('--drop-bad-time', action='store_true',
+                       help='Drop GPS positions with unrealistic timestamps (before RTC sync)')
+    parser.add_argument('--patch-time-jumps', action='store_true',
+                       help='Smooth out large timestamp jumps (e.g., RTC sync during session)')
+    parser.add_argument('--time-threshold', type=int, default=946684800000000,
+                       help='Minimum valid timestamp in microseconds since Unix epoch (default: Jan 1 2000)')
+    parser.add_argument('--jump-threshold', type=float, default=60.0,
+                       help='Time jump threshold in seconds for patching (default: 60.0)')
     
     args = parser.parse_args()
     
@@ -338,7 +436,11 @@ Traccar Server Setup:
             realtime=args.realtime,
             playback_speed=args.speed,
             batch_mode=args.batch,
-            batch_size=args.batch_size
+            batch_size=args.batch_size,
+            drop_bad_time=args.drop_bad_time,
+            patch_time_jumps=args.patch_time_jumps,
+            time_threshold=args.time_threshold,
+            jump_threshold=args.jump_threshold
         )
         
         return 0 if points_sent > 0 else 1
