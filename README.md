@@ -40,9 +40,11 @@ OpenPyPony is a low-cost, professional-grade data acquisition system built for t
 ### Power Consumption
 
 - **Baseline (Accel + OLED):** 20mA @ 5V
-- **+ GPS + ESP-01:** ~100mA @ 5V (0.5W)
+- **+ GPS (ATGM336H):** ~140mA @ 5V (0.7W)
+- **+ ESP-01:** ~170mA @ 5V (0.8W)
+- **+ GPS (ATGM336H)  + ESP-01:** ~210mA @ 5V (1.0W)
 
-**Battery Life:** 20+ hours on 2000mAh USB battery pack
+**Battery Life:** 8+ hours on 2000mAh USB battery pack
 
 ---
 
