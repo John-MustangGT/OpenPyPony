@@ -334,9 +334,10 @@ class SampleParser:
         """
         Parse GPS satellite data
         
-        Two formats supported:
-        - Compact: 3 bytes per satellite (id, snr, flags)
-        - Full: 4 bytes per satellite (id, azimuth, elevation, snr)
+        Three formats supported:
+        - 3 bytes: (id, snr, flags) - compact format
+        - 4 bytes: (id, azimuth, elevation, snr) - old format, azimuth limited to 0-255
+        - 5 bytes: (id, azimuth[2], elevation, snr) - new format, full 0-360° azimuth
         
         Returns:
             List of satellite dicts or None if invalid
@@ -346,20 +347,33 @@ class SampleParser:
         
         satellites = []
         
-        # Try 4-byte format first (id, azimuth, elevation, snr)
+        # Try 5-byte format first (NEW: id, azimuth[2 bytes], elevation, snr)
+        if len(data) % 5 == 0:
+            count = len(data) // 5
+            for i in range(count):
+                sat_id, azimuth, elevation, snr = struct.unpack('<BHBB', data[i*5:i*5+5])
+                satellites.append({
+                    'id': sat_id,
+                    'azimuth': azimuth,  # Full 0-360 range
+                    'elevation': elevation,
+                    'snr': snr
+                })
+            return satellites
+        
+        # Try 4-byte format (OLD: id, azimuth, elevation, snr - all single bytes)
         if len(data) % 4 == 0:
             count = len(data) // 4
             for i in range(count):
                 sat_id, azimuth, elevation, snr = struct.unpack('<BBBB', data[i*4:i*4+4])
                 satellites.append({
                     'id': sat_id,
-                    'azimuth': azimuth,
+                    'azimuth': azimuth,  # Limited to 0-255
                     'elevation': elevation,
                     'snr': snr
                 })
             return satellites
         
-        # Try 3-byte format (id, snr, flags)
+        # Try 3-byte format (COMPACT: id, snr, flags)
         if len(data) % 3 == 0:
             count = len(data) // 3
             for i in range(count):

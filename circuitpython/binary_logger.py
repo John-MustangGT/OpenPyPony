@@ -3,7 +3,7 @@ binary_logger.py - Binary logging format for OpenPonyLogger
 
 Implements structured binary format with:
 - Session management (headers with metadata)
-- Data blocks with checksums (SHA-256 or CRC32 fallback)
+- Data blocks with checksums (CRC32)
 - Event-based flushing (time, size, high-g events)
 - Configurable format (CSV or Binary)
 """
@@ -12,12 +12,8 @@ import struct
 import time
 import os
 
-# Try to import hashlib for SHA-256, fall back to CRC32
-try:
-    import hashlib
-    HAS_HASHLIB = True
-except ImportError:
-    HAS_HASHLIB = False
+# CircuitPython doesn't have hashlib.sha256, so always use CRC32
+HAS_HASHLIB = False
 
 # =============================================================================
 # Constants
@@ -184,7 +180,7 @@ class HardwareConfigBlock:
             block.append(len(id_bytes))
             block.extend(id_bytes)
         
-        # CRC of entire block (using your existing crc32 function)
+        # CRC of entire block
         block_crc = crc32(bytes(block))
         block.extend(struct.pack('<I', block_crc))
         
@@ -451,11 +447,12 @@ class DataBlock:
         # Combine all samples
         data_payload = b''.join(self.samples)
         
-        # Calculate checksum of header + data
+        # Calculate CRC32 checksum of header + data
         block_data = bytes(header) + data_payload
-        checksum = crc32(block_data).to_bytes(4, 'big')
+        checksum = crc32(block_data)
         
-        return block_data + checksum
+        # Return block with CRC32 (4 bytes, little-endian)
+        return block_data + struct.pack('<I', checksum)
 
 
 # =============================================================================
@@ -475,12 +472,11 @@ class BinaryLogger:
         self._last_flush_time = 0
         self.active = False
         self.start_time = None
-        self.bytes_written = None
+        self.bytes_written = 0
     
     def start_session(self, session_name="", driver_name="", vehicle_id="",
                      weather=WEATHER_UNKNOWN, ambient_temp=0, config_crc=0,
-                     include_hardware=True
-        ):
+                     include_hardware=True):
         """
         Start a new logging session
     
@@ -491,7 +487,7 @@ class BinaryLogger:
             weather: Weather condition code
             ambient_temp: Ambient temperature in °C
             config_crc: Configuration CRC
-            include_hardware: If True, write hardware config block (default: True)  # <-- ADD THIS
+            include_hardware: If True, write hardware config block (default: True)
         """
         if self.active:
             self.stop_session()
@@ -567,9 +563,10 @@ class BinaryLogger:
     def _flush_block(self):
         """Flush current block to file"""
         if self.current_block and not self.current_block.is_empty():
-            self.log_file.write(self.current_block.to_bytes())
+            block_bytes = self.current_block.to_bytes()
+            self.log_file.write(block_bytes)
             self.log_file.flush()
-            self.bytes_written += len(self.current_block.to_bytes())
+            self.bytes_written += len(block_bytes)
             
             # Create new block
             self.block_sequence += 1
@@ -609,11 +606,28 @@ class BinaryLogger:
         return self.write_sample(SAMPLE_TYPE_GPS_FIX, data, timestamp_us)
     
     def write_gps_satellites(self, satellites, timestamp_us=None):
-        """Write GPS satellite data"""
-        # Pack: count (1 byte) + for each sat: id, azimuth, elevation, snr (4 bytes each)
+        """
+        Write GPS satellite data
+        
+        Format per satellite:
+        - ID: 1 byte (0-255)
+        - Azimuth: 2 bytes (0-360 degrees)
+        - Elevation: 1 byte (0-90 degrees)
+        - SNR: 1 byte (0-99 dB)
+        Total: 5 bytes per satellite
+        """
+        # Pack: count (1 byte) + for each sat: id (1), azimuth (2), elevation (1), snr (1)
         data = struct.pack('<B', len(satellites))
         for sat in satellites:
-            data += struct.pack('<BBBB', sat['id'], sat['azimuth'], sat['elevation'], sat['snr'])
+            # Clamp values to valid ranges
+            sat_id = min(255, max(0, sat['id']))
+            azimuth = min(360, max(0, sat['azimuth']))
+            elevation = min(90, max(0, sat['elevation']))
+            snr = min(99, max(0, sat['snr']))
+            
+            # Pack: id (B), azimuth (H=2 bytes), elevation (B), snr (B)
+            data += struct.pack('<BHBB', sat_id, azimuth, elevation, snr)
+        
         return self.write_sample(SAMPLE_TYPE_GPS_SATELLITES, data, timestamp_us)
 
     def get_duration(self):
