@@ -44,8 +44,14 @@ class GPS:
         self.sat_tracker = SatelliteTracker()
 
     def update(self):
-        self.gps.update()
-        self.sat_tracker.update(self.gps)
+        try:
+            self.gps.update()
+            self.sat_tracker.update(self.gps)
+        except ValueError as e:
+            if "invalid syntax for integer" in str(e):
+                pass  # Ignore timestamp errors during GPS acquisition
+            else:
+                raise
 
     def read(self):
         """Read GPS data"""
