@@ -13,11 +13,31 @@ import rtc
 import time
 import json
 from hardware_config import hw_config
+from microcontroller import watchdog
 
 print("OpenPonyLogger v2.1 - Initializing...")
 
 # Dictionary to store initialized hardware
 hardware = {}
+
+# =============================================================================
+# Watchdog
+# =============================================================================
+
+if hw_config.is_enabled("interfaces.watchdog"):
+    try:
+        timeout = hw_config.get_float("interfaces.watchdog.timeout", default=5.0)
+        watchdog.timeout = timeout
+        mode = hw_config.get("interfaces.watchdog.mode", default="none").lower()
+        if mode == "reset":
+            watchdog.mode = WatchDogMode.RESET
+        elif mode == "raise":
+            watchdog.mode = WatchDogMode.RAISE
+        else:
+            watchdog.mode = None
+        print(f"✓ WatchDog initialized Mode:{mode} Timeout:{timeout}")
+    except Exception as e:
+        print(f"✗ WatchDog error: {e}")
 
 # =============================================================================
 # Heartbeat LED

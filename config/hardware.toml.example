@@ -13,6 +13,11 @@
 # CORE INTERFACES
 # =============================================================================
 
+[interfaces.watchdog]
+enabled = true
+timeout = 5.0
+mode    = reset
+
 [interfaces.i2c]
 enabled = true
 sda = "GP4"      # STEMMA QT SDA (default)

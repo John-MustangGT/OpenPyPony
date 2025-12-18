@@ -158,6 +158,7 @@ def deploy_python_modules(drive_path, backup=True):
     # List of all Python modules to deploy
     python_modules = [
         "code.py",
+        "debug.py",
         "accelerometer.py",
         "binary_logger.py",
         "config.py",
@@ -272,6 +273,7 @@ def clean_deployment(drive_path):
     # Python modules to remove (including backups)
     python_modules = [
         "code.py",
+        "debug.py",
         "accelerometer.py",
         "binary_logger.py",
         "config.py",
@@ -333,6 +335,7 @@ def validate_deployment(drive_path):
     # Required Python modules
     required_files = [
         "code.py",
+        "debug.py",
         "hardware_setup.py",
         "hardware_config.py",
         "utils.py",

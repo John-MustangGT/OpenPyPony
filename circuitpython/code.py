@@ -3,6 +3,7 @@ main.py - OpenPonyLogger Pico Firmware v2.1 (Refactored)
 """
 
 import time
+import json
 import hardware_setup as hw
 from config import config
 from accelerometer import Accelerometer
@@ -15,6 +16,7 @@ from serial_com import JSONProtocol
 from neopixel_handler import NeoPixelHandler
 from microcontroller import watchdog
 from watchdog import WatchDogMode
+from debug import OpenPonyDebug
 
 def main():
     # Initialize components
@@ -28,11 +30,6 @@ def main():
     oled = OLED(hw.display)
     protocol = JSONProtocol(hw.esp_uart, session, gps)
     neopixel = NeoPixelHandler(hw.pixel)
-
-    # Setup watchdog
-    watchdog.timeout = 8
-    watchdog.mode = WatchDogMode.RESET
-    watchdog.feed()
 
     # Startup sequence
     neopixel.christmas_tree()
@@ -69,6 +66,8 @@ def main():
     serial_debug = config.get_bool("SERIAL_DEBUG", True)
     status_interval_ms = config.get_int("STATUS_INTERVAL", 5000)
 
+    DEBUG = OpenPonyDebug()
+
     try:
         while True:
             watchdog.feed()
@@ -84,6 +83,9 @@ def main():
                 "g": accel.read(),
                 "gps": gps.read()
             }
+ 
+            # get the current system time
+            now = time.monotonic()
             
             # Log to SD card
             if session.active:
@@ -115,7 +117,6 @@ def main():
                             print(f"[Log] Satellites logged: {sat_data['count']} sats")
 
             # Update heartbeat LED (1Hz, 100ms on)
-            now = time.monotonic()
             if now - heartbeat_last_toggle >= 1.0:
                 hw.heartbeat.value = True
                 heartbeat_last_toggle = now
@@ -140,15 +141,15 @@ def main():
             # Send telemetry (1Hz)
             if serial_debug and now - last_telemetry_send > 1.0:
                 last_telemetry_send = now
-                if not hw.gps.timestamp_utc:
-                    print("No GPS Time")
-                else:
+                if hw.gps.timestamp_utc:
                     def _format_datetime(datetime):
                         date_part = f"{datetime.tm_mon:02}/{datetime.tm_mday:02}/{datetime.tm_year}"
                         time_part = f"{datetime.tm_hour:02}:{datetime.tm_min:02}:{datetime.tm_sec:02}"
                         return f"{date_part} {time_part}"
                     print(f"Fix timestamp: {_format_datetime(hw.gps.timestamp_utc)}")
-                print(f"{sensor_data}")
+                else:
+                    print(f"No GPS Time")
+                DEBUG.debug_message(f"{json.dumps(sensor_data)}")
                 protocol.send_telemetry(sensor_data)
             
             # Send satellites (every 5s)
