@@ -81,22 +81,24 @@ Status               1000ms      Console updates
 ### File Structure
 ```
 OpenPyPony/
-├── circuitpython            # Main Logger
-│   ├── code.py		     # Main for startup
+├── circuitpython        # Main Logger
+│   ├── code.py		         # Main for startup
 │   ├── accelerometer.py     # Accelerometer Class
 │   ├── config.py            # Configurtion Class
 │   ├── gps.py               # GPS Class
-│   ├── hardware_setup.py    # Base hardware Configuration Class
+│   ├── hardware_setup.py    # Base Hardware Configuration Class
 │   ├── neopixel_handler.py  # NeoPixel Class
 │   ├── oled.py              # OLed Class
 │   ├── rtc_handler.py       # RTC Class
 │   ├── sdcard.py            # SD Card/Storage Class
 │   ├── serial_com.py        # Serial Communications Class
 │   ├── utils.py             # Utilites Class
-│   └── esp-client	     # Arduino ESP-01s Webserver
-└── docs
+│   └── esp-client	         # Arduino ESP-01s Webserver
+├── hardware             # SCAD, and STLs
+│   └── fixture.scad         # Fixture, to mount boards on
+└── docs                 # Documentation
     ├── BOM.md               # Bill of Materials
-    ├── WIRING.md	     # How to wire it
+    ├── WIRING.md	         # How to wire it
     └── PICO_GPIO_TABLE.md   # Table of how the GPIOs are used
 ```
 
