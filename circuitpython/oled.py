@@ -26,7 +26,9 @@ class OLED:
         self.splash_group = displayio.Group()
         
         # Title (Large font)
-        title = label.Label(terminalio.FONT, text="OpenPonyLogger", color=0xFFFFFF, x=5, y=8, scale=2)
+        title = label.Label(terminalio.FONT, text="OpenPony", color=0xFFFFFF, x=5, y=8, scale=2)
+        self.splash_group.append(title)
+        title = label.Label(terminalio.FONT, text="Logger", color=0xFFFFFF, x=10, y=22, scale=1)
         self.splash_group.append(title)
         
         # Status (middle)

@@ -116,11 +116,13 @@ def main():
                         if serial_debug:
                             print(f"[Log] Satellites logged: {sat_data['count']} sats")
 
-            # Update heartbeat LED (1Hz, 100ms on)
+            # Update heartbeat LED (1Hz; on for normal=800ms, error=200ms)
             if now - heartbeat_last_toggle >= 1.0:
                 hw.heartbeat.value = True
                 heartbeat_last_toggle = now
-            elif now - heartbeat_last_toggle >= 0.1:
+            elif hw.gps.has_fix and now - heartbeat_last_toggle >= 0.9:
+                hw.heartbeat.value = False
+            elif not hw.gps.has_fix and now - heartbeat_last_toggle >= 0.1:
                 hw.heartbeat.value = False
 
             # only sync RTC every minute
