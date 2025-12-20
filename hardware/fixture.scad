@@ -64,7 +64,7 @@ translate([0,0,0]) {
             cutout2(size=ACC, thickness=4, flat=true);
         // Geekstory ESP=01 Breakout
         translate(ESPloc)
-            cutout2(size=ESP, thickness=4);
+            cutout2(size=ESP, thickness=4, flat=true);
         translate(PIN1loc+[0,0,-1]) cylinder(h=PIN1[0], r=PIN1[1]+smidge, center=false);
         translate(PIN2loc+[0,0,-1]) cylinder(h=PIN2[0], r=PIN2[1]+smidge, center=false);
         translate(PIN3loc+[0,0,-1]) cylinder(h=PIN3[0], r=PIN3[1]+smidge, center=false);
