@@ -1,189 +1,296 @@
-# hardware.toml - OpenPonyLogger Hardware Configuration
-#
-# This file defines all hardware peripherals, pin assignments, and configurations.
-# Edit this file to match your specific hardware setup.
-#
-# Pin Format: GP## for GPIO pins (e.g., GP25, GP0)
-#            "STEMMA_I2C" for default I2C pins (GP4/GP5)
-#            "STEMMA_UART" for STEMMA QT UART
-#
-# WARNING: Changing pins requires corresponding wiring changes!
+# OpenPonyLogger Hardware Configuration
+# Copy to hardware.toml and customize for your build
 
 # =============================================================================
-# CORE INTERFACES
+# Device Information
 # =============================================================================
 
-[interfaces.watchdog]
-enabled = true
-timeout = 5.0
-mode    = reset
-
-[interfaces.i2c]
-enabled = true
-sda = "GP4"      # STEMMA QT SDA (default)
-scl = "GP5"      # STEMMA QT SCL (default)
-frequency = 100000
-
-[interfaces.spi]
-enabled = true
-sck = "GP18"     # SD card clock
-mosi = "GP19"    # SD card MOSI
-miso = "GP16"    # SD card MISO
-
-[interfaces.uart_gps]
-enabled = true
-tx = "GP8"       # GPS TX (Pico RX)
-rx = "GP9"       # GPS RX (Pico TX)
-baudrate = 9600
-timeout = 10
-
-[interfaces.uart_esp]
-enabled = true
-tx = "GP0"       # ESP-01s TX
-rx = "GP1"       # ESP-01s RX  
-baudrate = 115200
-timeout = 0.1
-
+[device]
+name = "OpenPonyLogger-01"
+build_date = "2024-12-23"
+hardware_version = "1.0"
+notes = "Pico 2W + LSM6DSOX + LIS3MDL + PA1010D"
 
 # =============================================================================
-# SENSORS
+# Accelerometer Configuration
 # =============================================================================
 
 [sensors.accelerometer]
 enabled = true
-type = "LIS3DH"
-interface = "i2c"
-address = 0x18
-range = 4           # G-force range: 2, 4, 8, 16
-sample_rate = 100   # Hz: 10, 25, 50, 100, 200, 400
 
-[sensors.gyroscope]
-enabled = false
-type = "LSM6DS33"   # Future support
-interface = "i2c"
+# Sensor type: LIS3DH, LSM6DSOX, ICM20948, MPU6050
+type = "LSM6DSOX"
+
+# I2C address (hex)
+# LIS3DH: 0x18 or 0x19
+# LSM6DSOX: 0x6A or 0x6B
+# ICM20948: 0x68 or 0x69
+# MPU6050: 0x68 or 0x69
 address = 0x6A
 
-[sensors.magnetometer]
-enabled = false
-type = "LIS3MDL"    # Future support
-interface = "i2c"
-address = 0x1E
+# Range in g: 2, 4, 8, 16
+# LIS3DH: 2, 4, 8, 16
+# LSM6DSOX: 2, 4, 8, 16
+# ICM20948: 2, 4, 8, 16
+# MPU6050: 2, 4, 8, 16
+range = 4
 
+# Sample rate in Hz
+# LIS3DH: 10, 25, 50, 100, 200, 400
+# LSM6DSOX: 12, 26, 52, 104, 208, 416, 833
+# ICM20948: 17, 34, 68, 136, 273, 562
+# MPU6050: 5, 10, 21, 44, 94, 184, 260
+sample_rate = 104
 
 # =============================================================================
-# GPS MODULE
+# Gyroscope Configuration
+# =============================================================================
+
+[sensors.gyroscope]
+enabled = true
+
+# Sensor type (usually same as accelerometer for IMUs)
+# LSM6DSOX, ICM20948, MPU6050
+# Leave blank to auto-detect from accelerometer
+type = ""
+
+# Range in degrees/second
+# LSM6DSOX: 125, 250, 500, 1000, 2000
+# ICM20948: 250, 500, 1000, 2000
+# MPU6050: 250, 500, 1000, 2000
+range = 250
+
+# Sample rate in Hz (usually same as accelerometer)
+sample_rate = 104
+
+# =============================================================================
+# Magnetometer Configuration
+# =============================================================================
+
+[sensors.magnetometer]
+enabled = true
+
+# Sensor type: LIS3MDL, ICM20948
+type = "LIS3MDL"
+
+# I2C address (hex)
+# LIS3MDL: 0x1C or 0x1E
+# ICM20948: Built into chip (use accelerometer address)
+address = 0x1C
+
+# Range in Gauss
+# LIS3MDL: 4, 8, 12, 16
+# ICM20948: Auto (±4900 µT)
+range = 4
+
+# Sample rate in Hz
+# LIS3MDL: 0.625, 1.25, 2.5, 5, 10, 20, 40, 80
+# ICM20948: Auto (100 Hz)
+sample_rate = 80
+
+# Calibration offsets (micro-Tesla)
+# Run calibration routine to determine these
+offset_x = 0.0
+offset_y = 0.0
+offset_z = 0.0
+
+# =============================================================================
+# GPS Configuration
 # =============================================================================
 
 [gps]
 enabled = true
-type = "ATGM336H"
-interface = "uart_gps"
-update_rate = 1000  # milliseconds (1000 = 1Hz)
-pps_pin = "GP7"     # Pulse Per Second pin (optional)
-pps_enabled = false
 
-# NMEA sentences to request (GGA=position, RMC=recommended minimum, GSV=satellites)
-sentences = "0,1,0,1,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0"  # GGA + RMC + GSV
+# GPS type: ATGM336H, PA1010D
+type = "PA1010D"
 
+# Interface: uart_gps (UART) or i2c (I2C, PA1010D only)
+interface = "i2c"
+
+# I2C address (PA1010D on I2C only)
+address = 0x10
+
+# Update rate in milliseconds (1000 = 1Hz)
+update_rate = 1000
+
+# NMEA sentence configuration (PMTK314 command)
+# Format: GLL,RMC,VTG,GGA,GSA,GSV,0,0,0,0,0,0,0,MCHN,0,0,0,0,ZDA
+# Default enables: RMC, GGA, GSA, GSV
+sentences = "0,1,0,1,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0"
 
 # =============================================================================
-# STORAGE
+# I2C Interface Configuration
 # =============================================================================
 
-[storage.sdcard]
+# Primary I2C bus (STEMMA QT or custom pins)
+[interfaces.i2c_primary]
 enabled = true
-interface = "spi"
-cs_pin = "GP17"     # Chip select
+use_stemma = true  # Use GP4/GP5 STEMMA pins
+
+# If use_stemma = false, specify custom pins:
+# scl = "GP1"
+# sda = "GP0"
+frequency = 100000
+
+# Secondary I2C bus (optional)
+[interfaces.i2c_secondary]
+enabled = false
+scl = "GP3"
+sda = "GP2"
+frequency = 100000
+
+# =============================================================================
+# UART Interfaces
+# =============================================================================
+
+# GPS UART (for ATGM336H or PA1010D in UART mode)
+[interfaces.uart_gps]
+enabled = true
+tx = "GP4"
+rx = "GP5"
+baudrate = 9600
+timeout = 10
+
+# ESP-01S UART (for WiFi/Bluetooth radio)
+[interfaces.uart_esp]
+enabled = true
+tx = "GP0"
+rx = "GP1"
+baudrate = 115200
+timeout = 1
+
+# =============================================================================
+# SPI Interface
+# =============================================================================
+
+[interfaces.spi]
+enabled = true
+sck = "GP18"
+mosi = "GP19"
+miso = "GP16"
+
+# =============================================================================
+# SD Card
+# =============================================================================
+
+[sdcard]
+enabled = true
+cs_pin = "GP17"
 mount_point = "/sd"
 
-
 # =============================================================================
-# DISPLAY
+# OLED Display
 # =============================================================================
 
-[display.oled]
+[display]
 enabled = true
 type = "SSD1306"
-interface = "i2c"
-address = 0x3C
 width = 128
 height = 64
-
+address = 0x3C
 
 # =============================================================================
-# INDICATORS
+# NeoPixel (WS2812)
 # =============================================================================
 
-[indicators.heartbeat_led]
+[neopixel]
 enabled = true
-pin = "GP25"        # Onboard LED
-blink_rate = 1.0    # Hz
+pin = "GP28"
+num_pixels = 7  # 7 for NeoPixel Jewel
+brightness = 0.2
+auto_write = true
 
-[indicators.neopixel_jewel]
+# =============================================================================
+# Heartbeat LED
+# =============================================================================
+
+[heartbeat]
 enabled = true
-pin = "GP22"
-num_pixels = 7
-brightness = 0.3    # 0.0 to 1.0
-# LED positions (Adafruit NeoPixel Jewel layout):
-#   0: Center (master status)
-#   1: OUT (forward acceleration)
-#   2: Right-front
-#   3: Right-rear
-#   4: PWR (braking)
-#   5: Left-rear
-#   6: Left-front
-
+pin = "GP25"  # Built-in LED on Pico
 
 # =============================================================================
-# RADIO (ESP-01S)
+# Watchdog Timer
 # =============================================================================
 
-[radio.esp01s]
+[watchdog]
 enabled = true
-interface = "uart_esp"
-reset_pin = "GP6"
-reset_duration = 0.05   # seconds
-ready_timeout = 5.0     # seconds to wait for ready message
-
+timeout = 8.0  # seconds
 
 # =============================================================================
-# REAL-TIME CLOCK
+# RTC (Real-Time Clock)
 # =============================================================================
 
 [rtc]
 enabled = true
-type = "builtin"    # Options: "builtin" (Pico internal), "pcf8523" (Adafruit RTC)
-#i2c_address = "0x68"    # PCF8523 default address
-#sync_from_rtc = true    # If true, set system time from RTC on boot
-#sync_to_rtc = true      # If true, write system time to RTC when time is set
-timezone_offset = -5    # Hours from UTC (e.g., -5 for EST, -8 for PST)
-auto_dst = true         # Automatically apply DST
-
-
+type = "PCF8523"
+address = 0x68
 
 # =============================================================================
-# FUTURE EXPANSION
+# ESP-01S Radio Module
 # =============================================================================
 
-[expansion.can_bus]
+[radio]
 enabled = false
-type = "MCP2515"
-interface = "spi"
-cs_pin = "GP13"
-int_pin = "GP14"
+type = "ESP-01S"
+reset_pin = "GP22"
+enable_pin = "GP21"
 
-[expansion.obd2]
-enabled = false
-type = "ELM327"
-interface = "uart"
-# Will use separate UART when implemented
+# =============================================================================
+# Alternative Sensor Configurations (Examples)
+# =============================================================================
 
-[expansion.imu_9dof]
-enabled = false
-# Future: Combined accel + gyro + magnetometer
+# Example 1: LIS3DH + ATGM336H (Original OpenPonyLogger)
+# [sensors.accelerometer]
+# type = "LIS3DH"
+# address = 0x18
+# range = 2
+# sample_rate = 100
+#
+# [gps]
+# type = "ATGM336H"
+# interface = "uart_gps"
 
-[expansion.barometer]
-enabled = false
-type = "BMP280"
-interface = "i2c"
-address = 0x76
+# Example 2: ICM-20948 9DOF IMU (All sensors in one chip)
+# [sensors.accelerometer]
+# type = "ICM20948"
+# address = 0x69
+# range = 4
+# sample_rate = 100
+#
+# [sensors.gyroscope]
+# enabled = true
+# range = 500
+#
+# [sensors.magnetometer]
+# enabled = true
+# type = "ICM20948"  # Built-in AK09916
+
+# Example 3: MPU-6050/GY-521 (6DOF IMU)
+# [sensors.accelerometer]
+# type = "MPU6050"
+# address = 0x68
+# range = 4
+# sample_rate = 100
+#
+# [sensors.gyroscope]
+# enabled = true
+# type = "MPU6050"
+# range = 500
+
+# Example 4: LSM6DSOX + LIS3MDL (6DOF IMU + separate magnetometer)
+# [sensors.accelerometer]
+# type = "LSM6DSOX"
+# address = 0x6A
+# range = 4
+# sample_rate = 104
+#
+# [sensors.gyroscope]
+# enabled = true
+# range = 250
+#
+# [sensors.magnetometer]
+# enabled = true
+# type = "LIS3MDL"
+# address = 0x1C
+# range = 4
+# sample_rate = 80

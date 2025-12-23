@@ -48,6 +48,8 @@ FLUSH_FLAG_SHUTDOWN = 0x10  # System shutdown
 SAMPLE_TYPE_ACCELEROMETER = 0x01
 SAMPLE_TYPE_GPS_FIX = 0x02
 SAMPLE_TYPE_GPS_SATELLITES = 0x03
+SAMPLE_TYPE_GYROSCOPE = 0x04
+SAMPLE_TYPE_MAGNETOMETER = 0x05
 SAMPLE_TYPE_OBD_PID = 0x10
 SAMPLE_TYPE_EVENT_MARKER = 0x20
 
@@ -598,6 +600,16 @@ class BinaryLogger:
         data = struct.pack('<fff', gx, gy, gz)
         g_total = (gx**2 + gy**2 + gz**2)**0.5
         return self.write_sample(SAMPLE_TYPE_ACCELEROMETER, data, timestamp_us, g_total)
+
+    def write_gyroscope(self, gx, gy, gz, timestamp_us=None):
+        """Write gyroscope data (degrees/sec)"""
+        data = struct.pack('<fff', gx, gy, gz)
+        return self.write_sample(SAMPLE_TYPE_GYROSCOPE, data, timestamp_us)
+
+    def write_magnetometer(self, mx, my, mz, timestamp_us=None):
+        """Write magnetometer data (micro-Tesla)"""
+        data = struct.pack('<fff', mx, my, mz)
+        return self.write_sample(SAMPLE_TYPE_MAGNETOMETER, data, timestamp_us)
     
     def write_gps(self, lat, lon, alt, speed, heading, hdop, timestamp_us=None):
         """Write GPS fix data"""
