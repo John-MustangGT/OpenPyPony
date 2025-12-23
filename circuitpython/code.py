@@ -5,11 +5,11 @@ main.py - OpenPonyLogger Pico Firmware v2.1 (Refactored)
 import time
 import json
 import hardware_setup as hw
+from sensors import init_sensors
 from config import config
 from accelerometer import Accelerometer
 from gps import GPS
 from rtc_handler import RTCHandler
-#from sdcard import FileManager
 from session_logger import SessionLogger
 from oled import OLED
 from serial_com import JSONProtocol
@@ -19,9 +19,18 @@ from watchdog import WatchDogMode
 from debug import OpenPonyDebug
 
 def main():
-    # Initialize components
-    accel = Accelerometer(hw.lis3dh)
-    gps = GPS(hw.gps)
+    # Initialize sensors (separate from system hardware)
+    print("\n" + "="*60)
+    print("Initializing Data Acquisition...")
+    print("="*60)
+    
+    sensors = init_sensors(hw.i2c)
+    
+    # Wrap sensors in handler classes
+    accel = Accelerometer(sensors.get('lis3dh'))
+    gps = GPS(sensors.get('gps'))
+    
+    # Initialize system components
     rtc = RTCHandler(
         config.get_int("TIMEZONE_OFFSET", -5), 
         config.get_bool("TIMEZONE_AUTO_DST", True)
@@ -45,9 +54,9 @@ def main():
     driver_name = config.get("DRIVER_NAME", "John")
     vehicle_id = config.get("VEHICLE_ID", "1ZVBP8AM5E5123456")
     session.start_session(
-	session_name=session_name,
-	driver_name=driver_name, 
-	vehicle_id=vehicle_id
+        session_name=session_name,
+        driver_name=driver_name, 
+        vehicle_id=vehicle_id
     )
 
     print("\n" + "="*50)
@@ -105,7 +114,8 @@ def main():
                     sensor_data["t"]
                 )
                 # Log satellite data every 5 minutes (300 seconds)
-                if hw.gps.has_fix and now - last_satellite_log >= 300.0:
+                gps_obj = sensors.get('gps')
+                if gps_obj and gps_obj.has_fix and now - last_satellite_log >= 300.0:
                     last_satellite_log = now
                     sat_data = gps.get_satellites_json()
                     if sat_data and sat_data.get('satellites'):
@@ -120,15 +130,15 @@ def main():
             if now - heartbeat_last_toggle >= 1.0:
                 hw.heartbeat.value = True
                 heartbeat_last_toggle = now
-            elif hw.gps.has_fix and now - heartbeat_last_toggle >= 0.9:
+            elif gps_obj and gps_obj.has_fix and now - heartbeat_last_toggle >= 0.9:
                 hw.heartbeat.value = False
-            elif not hw.gps.has_fix and now - heartbeat_last_toggle >= 0.1:
+            elif (not gps_obj or not gps_obj.has_fix) and now - heartbeat_last_toggle >= 0.1:
                 hw.heartbeat.value = False
 
             # only sync RTC every minute
-            if hw.gps.has_fix and now - last_rtc_update >= 60.0:
+            if gps_obj and gps_obj.has_fix and now - last_rtc_update >= 60.0:
                 last_rtc_update = now
-                rtc.sync_from_gps(gps.gps)
+                rtc.sync_from_gps(gps_obj)
             
             # Update NeoPixels (10Hz)
             if now - last_neopixel_update > 0.1:
@@ -143,12 +153,12 @@ def main():
             # Send telemetry (1Hz)
             if serial_debug and now - last_telemetry_send > 1.0:
                 last_telemetry_send = now
-                if hw.gps.timestamp_utc:
+                if gps_obj and gps_obj.timestamp_utc:
                     def _format_datetime(datetime):
                         date_part = f"{datetime.tm_mon:02}/{datetime.tm_mday:02}/{datetime.tm_year}"
                         time_part = f"{datetime.tm_hour:02}:{datetime.tm_min:02}:{datetime.tm_sec:02}"
                         return f"{date_part} {time_part}"
-                    print(f"Fix timestamp: {_format_datetime(hw.gps.timestamp_utc)}")
+                    print(f"Fix timestamp: {_format_datetime(gps_obj.timestamp_utc)}")
                 else:
                     print(f"No GPS Time")
                 DEBUG.debug_message(f"{json.dumps(sensor_data)}")

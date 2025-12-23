@@ -1,7 +1,16 @@
 """
-hardware_setup.py - Hardware setup for OpenPonyLogger
+hardware_setup.py - System peripherals setup for OpenPonyLogger
 
-Reads hardware.toml and initializes all configured peripherals.
+Handles system-level hardware initialization:
+- I2C/SPI/UART interfaces
+- RTC (built-in + PCF8523)
+- OLED display
+- SD card storage
+- Watchdog timer
+- Status indicators (LED, NeoPixels)
+- Radio (ESP-01S)
+
+Does NOT handle sensors - see sensors.py
 """
 
 import board
@@ -15,7 +24,7 @@ import json
 from hardware_config import hw_config
 from microcontroller import watchdog
 
-print("OpenPonyLogger v2.1 - Initializing...")
+print("OpenPonyLogger v2.1 - Initializing System Peripherals...")
 
 # Dictionary to store initialized hardware
 hardware = {}
@@ -26,16 +35,20 @@ hardware = {}
 
 if hw_config.is_enabled("interfaces.watchdog"):
     try:
+        from watchdog import WatchDogMode
+        
         timeout = hw_config.get_float("interfaces.watchdog.timeout", default=5.0)
         watchdog.timeout = timeout
         mode = hw_config.get("interfaces.watchdog.mode", default="none").lower()
+        
         if mode == "reset":
             watchdog.mode = WatchDogMode.RESET
         elif mode == "raise":
             watchdog.mode = WatchDogMode.RAISE
         else:
             watchdog.mode = None
-        print(f"✓ WatchDog initialized Mode:{mode} Timeout:{timeout}")
+        
+        print(f"✓ WatchDog initialized Mode:{mode} Timeout:{timeout}s")
     except Exception as e:
         print(f"✗ WatchDog error: {e}")
 
@@ -91,7 +104,6 @@ if hw_config.is_enabled("interfaces.i2c"):
             scl = i2c_pins.get('scl')
             frequency = i2c_pins.get('frequency', 100000)
             
-            # Verify pins are actual Pin objects
             if sda is None or scl is None:
                 raise ValueError(f"Invalid I2C pins: SDA={sda}, SCL={scl}")
             
@@ -106,94 +118,11 @@ if hw_config.is_enabled("interfaces.i2c"):
         hardware['i2c'] = None
 
 # =============================================================================
-# Accelerometer
+# SPI Interface (for SD card)
 # =============================================================================
 
-if hw_config.is_enabled("sensors.accelerometer") and hardware.get('i2c'):
+if hw_config.is_enabled("interfaces.spi"):
     try:
-        import adafruit_lis3dh
-        
-        accel_type = hw_config.get("sensors.accelerometer.type", "LIS3DH")
-        accel_addr = hw_config.get_int("sensors.accelerometer.address", 0x18)
-        
-        if accel_type.upper() == "LIS3DH":
-            lis3dh = adafruit_lis3dh.LIS3DH_I2C(hardware['i2c'], address=accel_addr)
-            
-            # Configure range
-            accel_range = hw_config.get_int("sensors.accelerometer.range", 2)
-            if accel_range == 4:
-                lis3dh.range = adafruit_lis3dh.RANGE_4_G
-            elif accel_range == 8:
-                lis3dh.range = adafruit_lis3dh.RANGE_8_G
-            elif accel_range == 16:
-                lis3dh.range = adafruit_lis3dh.RANGE_16_G
-            else:
-                lis3dh.range = adafruit_lis3dh.RANGE_2_G
-            
-            # Configure sample rate
-            sample_rate = hw_config.get_int("sensors.accelerometer.sample_rate", 100)
-            if sample_rate == 10:
-                lis3dh.data_rate = adafruit_lis3dh.DATARATE_10_HZ
-            elif sample_rate == 25:
-                lis3dh.data_rate = adafruit_lis3dh.DATARATE_25_HZ
-            elif sample_rate == 50:
-                lis3dh.data_rate = adafruit_lis3dh.DATARATE_50_HZ
-            elif sample_rate == 200:
-                lis3dh.data_rate = adafruit_lis3dh.DATARATE_200_HZ
-            elif sample_rate == 400:
-                lis3dh.data_rate = adafruit_lis3dh.DATARATE_400_HZ
-            else:
-                lis3dh.data_rate = adafruit_lis3dh.DATARATE_100_HZ
-            
-            hardware['accelerometer'] = lis3dh
-            print(f"✓ {accel_type} initialized (±{accel_range}g @ {sample_rate}Hz)")
-    except Exception as e:
-        print(f"✗ Accelerometer error: {e}")
-
-# =============================================================================
-# GPS Module
-# =============================================================================
-
-if hw_config.is_enabled("gps"):
-    try:
-        import adafruit_gps
-        
-        # Get UART interface
-        uart_name = hw_config.get("gps.interface", "uart_gps")
-        uart_config = hw_config.get_interface_pins(uart_name)
-        
-        if uart_config:
-            tx_pin = uart_config.get('tx')
-            rx_pin = uart_config.get('rx')
-            baudrate = uart_config.get('baudrate', 9600)
-            timeout = uart_config.get('timeout', 10)
-            
-            gps_uart = busio.UART(tx_pin, rx_pin, baudrate=baudrate, timeout=timeout)
-            gps = adafruit_gps.GPS(gps_uart, debug=False)
-            
-            # Configure sentences
-            sentences = hw_config.get("gps.sentences", "0,1,0,1,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0")
-            gps.send_command(f'PMTK314,{sentences}'.encode())
-            
-            # Configure update rate
-            update_rate = hw_config.get_int("gps.update_rate", 1000)
-            gps.send_command(f'PMTK220,{update_rate}'.encode())
-            
-            hardware['gps'] = gps
-            hardware['gps_uart'] = gps_uart
-            
-            gps_type = hw_config.get("gps.type", "GPS")
-            print(f"✓ {gps_type} initialized ({update_rate}ms update)")
-    except Exception as e:
-        print(f"✗ GPS error: {e}")
-
-# =============================================================================
-# SD Card
-# =============================================================================
-
-if hw_config.is_enabled("storage.sdcard"):
-    try:
-        # Get SPI interface
         spi_config = hw_config.get_interface_pins("spi")
         
         if spi_config:
@@ -201,9 +130,26 @@ if hw_config.is_enabled("storage.sdcard"):
             mosi = spi_config.get('mosi')
             miso = spi_config.get('miso')
             
-            spi = busio.SPI(sck, mosi, miso)
-            
-            # Get CS pin
+            if sck and mosi and miso:
+                spi = busio.SPI(sck, mosi, miso)
+                hardware['spi'] = spi
+                print("✓ SPI initialized")
+            else:
+                print(f"✗ SPI: Invalid pins - SCK={sck}, MOSI={mosi}, MISO={miso}")
+    except Exception as e:
+        print(f"✗ SPI error: {e}")
+
+# =============================================================================
+# SD Card
+# =============================================================================
+
+if hw_config.is_enabled("storage.sdcard"):
+    try:
+        spi = hardware.get('spi')
+        
+        if not spi:
+            print("✗ SD card: SPI not initialized")
+        else:
             cs_pin = hw_config.get_pin("storage.sdcard.cs_pin")
             
             if cs_pin:
@@ -214,8 +160,9 @@ if hw_config.is_enabled("storage.sdcard"):
                 storage.mount(vfs, mount_point)
                 
                 hardware['sdcard'] = sdcard
-                hardware['spi'] = spi
                 print(f"✓ SD card mounted at {mount_point}")
+            else:
+                print("✗ SD card: No CS pin specified")
     except Exception as e:
         print(f"✗ SD card error: {e}")
 
@@ -313,18 +260,13 @@ if hw_config.is_enabled("rtc"):
     try:
         from pcf8523_rtc import setup_rtc
         
-        # Get I2C bus if needed for external RTC
         i2c_bus = hardware.get('i2c')
-        
-        # Setup RTC (handles both builtin and PCF8523)
         rtc_handler = setup_rtc(hw_config, i2c=i2c_bus)
         
         if rtc_handler:
-            # PCF8523 handler
             hardware['rtc'] = rtc_handler
             hardware['rtc_type'] = 'pcf8523'
         else:
-            # Built-in RTC
             rtc_clock = rtc.RTC()
             hardware['rtc'] = rtc_clock
             hardware['rtc_type'] = 'builtin'
@@ -339,24 +281,26 @@ if hw_config.is_enabled("rtc"):
 # Summary
 # =============================================================================
 
-print("\n✓ Hardware initialized")
+print("\n✓ System peripherals initialized")
 print(f"  Active peripherals: {len(hardware)}")
-if hw_config.is_enabled("sensors.accelerometer"):
-    print(f"  Accelerometer: {hw_config.get('sensors.accelerometer.type', 'Unknown')}")
-if hw_config.is_enabled("gps"):
-    print(f"  GPS: {hw_config.get('gps.type', 'Unknown')}")
-if hw_config.is_enabled("storage.sdcard"):
+if hardware.get('display'):
+    print(f"  Display: {hw_config.get('display.oled.type', 'OLED')}")
+if hardware.get('sdcard'):
     print(f"  Storage: SD card")
-if hw_config.is_enabled("display.oled"):
-    print(f"  Display: {hw_config.get('display.oled.type', 'Unknown')}")
+if hardware.get('esp_uart'):
+    print(f"  Radio: ESP-01S")
 
+
+# =============================================================================
+# Convenience Functions
+# =============================================================================
 
 def get_hardware(name):
     """
     Get initialized hardware peripheral
     
     Args:
-        name: Hardware name (e.g., 'accelerometer', 'gps', 'display')
+        name: Hardware name (e.g., 'display', 'sdcard', 'i2c')
     
     Returns:
         Hardware object or None
@@ -438,18 +382,13 @@ def get_time_string():
 # =============================================================================
 
 # Export hardware objects directly for easier access
-# These can be imported as: from hardware_setup import lis3dh, gps, display, etc.
-
-lis3dh = hardware.get('accelerometer')      # LIS3DH accelerometer
-gps = hardware.get('gps')                   # GPS module
-gps_uart = hardware.get('gps_uart')         # GPS UART
-display = hardware.get('display')           # OLED display
-display_bus = hardware.get('display_bus')   # Display bus
-sdcard = hardware.get('sdcard')             # SD card
-spi = hardware.get('spi')                   # SPI bus
-i2c = hardware.get('i2c')                   # I2C bus
-heartbeat = hardware.get('heartbeat')       # Heartbeat LED
-pixel = hardware.get('neopixel')            # NeoPixel Jewel
-esp_uart = hardware.get('esp_uart')         # ESP-01s UART
-esp_ready = hardware.get('esp_ready', False) # ESP ready flag
-rtc_clock = hardware.get('rtc')             # RTC
+display = hardware.get('display')
+display_bus = hardware.get('display_bus')
+sdcard = hardware.get('sdcard')
+spi = hardware.get('spi')
+i2c = hardware.get('i2c')
+heartbeat = hardware.get('heartbeat')
+pixel = hardware.get('neopixel')
+esp_uart = hardware.get('esp_uart')
+esp_ready = hardware.get('esp_ready', False)
+rtc_clock = hardware.get('rtc')
