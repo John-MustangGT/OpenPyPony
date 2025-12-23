@@ -1,0 +1,170 @@
+# hardware.toml - Hardware Configuration Examples for MPU-6050
+#
+# This file shows various hardware configuration options for using
+# the MPU-6050 (GY-521) IMU with OpenPonyLogger.
+
+# ============================================================================
+# CONFIGURATION 1: MPU-6050 Accelerometer Only
+# ============================================================================
+# Use this when you only need accelerometer data from the MPU-6050
+# Good for: Basic G-force tracking, saves power
+
+[device]
+name = "OpenPonyLogger-MPU6050-Accel"
+
+[accelerometer]
+sensor = "mpu6050"
+enabled = true
+
+[accelerometer.mpu6050]
+i2c_address = 0x68  # 0x68 if AD0=LOW, 0x69 if AD0=HIGH
+mode = "accel"      # Accelerometer only
+range = 2           # ±2g (options: 2, 4, 8, 16)
+
+[gyroscope]
+enabled = false
+
+# ============================================================================
+# CONFIGURATION 2: MPU-6050 Gyroscope Only
+# ============================================================================
+# Use this when you only need gyroscope data
+# Good for: Rotation tracking, drift analysis
+
+# [device]
+# name = "OpenPonyLogger-MPU6050-Gyro"
+# 
+# [accelerometer]
+# enabled = false
+# 
+# [gyroscope]
+# sensor = "mpu6050"
+# enabled = true
+# 
+# [gyroscope.mpu6050]
+# i2c_address = 0x68
+# mode = "gyro"       # Gyroscope only
+# range = 250         # ±250°/s (options: 250, 500, 1000, 2000)
+
+# ============================================================================
+# CONFIGURATION 3: MPU-6050 Both Accelerometer + Gyroscope
+# ============================================================================
+# Use this for full 6-axis IMU data
+# Good for: Advanced telemetry, orientation tracking, full motion capture
+
+# [device]
+# name = "OpenPonyLogger-MPU6050-Full"
+# 
+# [accelerometer]
+# sensor = "mpu6050"
+# enabled = true
+# 
+# [accelerometer.mpu6050]
+# i2c_address = 0x68
+# mode = "both"       # Both sensors active
+# range = 4           # ±4g
+# 
+# [gyroscope]
+# sensor = "mpu6050"
+# enabled = true
+# 
+# [gyroscope.mpu6050]
+# i2c_address = 0x68  # Must match accelerometer
+# mode = "both"       # Both sensors active
+# range = 500         # ±500°/s
+
+# ============================================================================
+# CONFIGURATION 4: Original LIS3DH Accelerometer (Default)
+# ============================================================================
+# Use this to keep using the original LIS3DH accelerometer
+
+# [device]
+# name = "OpenPonyLogger-LIS3DH"
+# 
+# [accelerometer]
+# sensor = "lis3dh"
+# enabled = true
+# 
+# [accelerometer.lis3dh]
+# i2c_address = 0x18
+# range = 2           # ±2g
+# data_rate = 100     # 100Hz
+# 
+# [gyroscope]
+# enabled = false
+
+# ============================================================================
+# Common Settings (same for all configurations)
+# ============================================================================
+
+[i2c]
+scl = 9
+sda = 8
+frequency = 400000
+
+[gps]
+enabled = true
+uart_tx = 0
+uart_rx = 1
+baudrate = 9600
+
+[display]
+enabled = true
+type = "ssd1306"
+i2c_address = 0x3C
+width = 128
+height = 64
+
+[sdcard]
+enabled = true
+spi_sck = 18
+spi_mosi = 19
+spi_miso = 16
+cs = 17
+
+[rtc]
+enabled = true
+type = "pcf8523"
+i2c_address = 0x68
+
+[logging]
+format = "binary"
+sample_rate = 10
+buffer_size = 50
+
+# ============================================================================
+# Hardware Notes
+# ============================================================================
+# 
+# MPU-6050 (GY-521) Pinout:
+# - VCC  -> 3.3V (or 5V, module has regulator)
+# - GND  -> GND
+# - SCL  -> GP9 (I2C SCL)
+# - SDA  -> GP8 (I2C SDA)
+# - XDA  -> Not connected (for external I2C master mode)
+# - XCL  -> Not connected
+# - AD0  -> GND (I2C address 0x68) or 3.3V (address 0x69)
+# - INT  -> Not connected (optional interrupt pin)
+# 
+# I2C Address Selection:
+# - AD0 = LOW (GND):  0x68 (default, conflicts with PCF8523 RTC!)
+# - AD0 = HIGH (3.3V): 0x69 (recommended if using RTC)
+# 
+# Important: If using MPU-6050 at 0x68 AND PCF8523 RTC at 0x68,
+# you MUST change one of them! Options:
+# 1. Set MPU-6050 AD0=HIGH (address 0x69) - RECOMMENDED
+# 2. Disable RTC in config
+# 3. Use different RTC model
+# 
+# Range Selection Guide:
+# 
+# Accelerometer:
+# - ±2g:  Normal driving, best resolution
+# - ±4g:  Spirited driving, track days
+# - ±8g:  Aggressive track driving
+# - ±16g: Motorsports, rallying
+# 
+# Gyroscope:
+# - ±250°/s:  Smooth driving, best resolution
+# - ±500°/s:  Normal track days
+# - ±1000°/s: Aggressive cornering
+# - ±2000°/s: Drifting, rallying

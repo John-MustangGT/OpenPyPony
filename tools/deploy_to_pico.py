@@ -241,13 +241,14 @@ def deploy_python_modules(drive_path, backup=True):
         "gps.py",
         "hardware_setup.py",
         "hardware_config.py",
+        "mpu6050.py",         # MPU-6050 driver
         "neopixel_handler.py",
         "oled.py",
         "pcf8523_rtc.py",
         "rtc_handler.py",
         "sdcard.py",
         "serial_com.py",
-        "session_logger.py",  # Added!
+        "session_logger.py",
         "utils.py",
     ]
     
