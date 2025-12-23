@@ -15,3 +15,8 @@ class OpenPonyDebug:
         dt = self.rtc.datetime
         now = f"{dt.tm_hour:02d}:{dt.tm_min:02d}:{dt.tm_sec:02d}"
         print(f"{now} - {s}")
+
+DEBUG = OpenPonyDebug()
+
+def debug_print(self, sensor, s):
+    debug_message(f"[{sensor}] - {s}")

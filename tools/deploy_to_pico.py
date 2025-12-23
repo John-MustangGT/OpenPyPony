@@ -250,6 +250,13 @@ def deploy_python_modules(drive_path, backup=True):
         "serial_com.py",
         "session_logger.py",
         "utils.py",
+        "gyroscope.py",
+        "icm20948.py",
+        "lis3mdl.py",
+        "lsm6dsox.py",
+        "magnetometer.py",
+        "pa1010d.py",
+        "sensors.py",
     ]
     
     # Create set of known files for orphan detection
@@ -373,6 +380,13 @@ def clean_deployment(drive_path):
         "serial_com.py",
         "session_logger.py",
         "utils.py",
+        "gyroscope.py",
+        "icm20948.py",
+        "lis3mdl.py",
+        "lsm6dsox.py",
+        "magnetometer.py",
+        "pa1010d.py",
+        "sensors.py",
     ]
     
     files_removed = 0
@@ -440,6 +454,13 @@ def validate_deployment(drive_path):
         "sdcard.py",
         "serial_com.py",
         "session_logger.py",
+        "gyroscope.py",
+        "icm20948.py",
+        "lis3mdl.py",
+        "lsm6dsox.py",
+        "magnetometer.py",
+        "pa1010d.py",
+        "sensors.py",
     ]
     
     # Recommended libraries
