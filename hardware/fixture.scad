@@ -19,61 +19,67 @@ smidge=0.1;
 font_size = 5;
 text_height = 2;
 
+topPlate();
+//bottomPlate();
+
 //Bottom plate
-translate([70,0,0]) {
-    union() {
-        difference() {
-            roundedcube_corners(PLATE, center=true, radius = 1.0);
-            // Raspberry Pi Pico 2w
-            translate(PICOloc)
-                cutout2(size=PICO, thickness=4);
-            // Adafruit Picowbell Adatalogger
-            translate(COWBELLloc)
-                cutout2(size=COWBELL, thickness=4);
-            // Teyleten ATGM336H GPS
-            translate(GPSloc)
-                cutout2(size=GPS, thickness=4); 
-            // Adafruit LIS3DH STEMMA Breakout
-            translate(ACCloc)
-                cutout2(size=ACC, thickness=4);
-             // Geekstory ESP=01 Breakout
-            translate(ESPloc)
-                cutout2(size=ESP, thickness=4);
+module bottomPlate() {
+    translate([70,0,0]) {
+        union() {
+            difference() {
+                roundedcube_corners(PLATE, center=true, radius = 1.0);
+                // Raspberry Pi Pico 2w
+                translate(PICOloc)
+                    cutout2(size=PICO, thickness=4);
+                // Adafruit Picowbell Adatalogger
+                translate(COWBELLloc)
+                    cutout2(size=COWBELL, thickness=4);
+                // Teyleten ATGM336H GPS
+                translate(GPSloc)
+                    cutout2(size=GPS, thickness=4); 
+                // Adafruit LIS3DH STEMMA Breakout
+                translate(ACCloc)
+                    cutout2(size=ACC, thickness=4);
+                 // Geekstory ESP=01 Breakout
+                translate(ESPloc)
+                    cutout2(size=ESP, thickness=4);
+            }
+            translate(PIN1loc) cylinder(h=PIN1[0], r=PIN1[1], center=false);
+            translate(PIN2loc) cylinder(h=PIN2[0], r=PIN2[1], center=false);
+            translate(PIN3loc) cylinder(h=PIN3[0], r=PIN3[1], center=false);
         }
-        translate(PIN1loc) cylinder(h=PIN1[0], r=PIN1[1], center=false);
-        translate(PIN2loc) cylinder(h=PIN2[0], r=PIN2[1], center=false);
-        translate(PIN3loc) cylinder(h=PIN3[0], r=PIN3[1], center=false);
     }
 }
 
-//Top plate
-translate([0,0,0]) {
-    difference() {
-        roundedcube_corners(PLATE+[0,0,-0.75], center=true, radius = 1.0);
-        // Raspberry Pi Pico 2w
-        translate(PICOloc)
-            cutout2(size=PICO, thickness=4, flat=true);
-        // Adafruit Picowbell Adatalogger
-        translate(COWBELLloc)
-            cutout2(size=COWBELL, thickness=4, flat=true);
-        // Teyleten ATGM336H GPS
-        translate(GPSloc)
-            cutout2(size=GPS, thickness=4, flat=true); 
-        // Adafruit LIS3DH STEMMA Breakout
-        translate(ACCloc)
-            cutout2(size=ACC, thickness=4, flat=true);
-        // Geekstory ESP=01 Breakout
-        translate(ESPloc)
-            cutout2(size=ESP, thickness=4, flat=true);
-        translate(PIN1loc+[0,0,-1]) cylinder(h=PIN1[0], r=PIN1[1]+smidge, center=false);
-        translate(PIN2loc+[0,0,-1]) cylinder(h=PIN2[0], r=PIN2[1]+smidge, center=false);
-        translate(PIN3loc+[0,0,-1]) cylinder(h=PIN3[0], r=PIN3[1]+smidge, center=false);
-    }
-    translate([0,(-PLATE[1]/2)+7,0])
-    linear_extrude(height = text_height) {
-        text("OpenPonyLogger", size = font_size, halign="center", valign="center");
-        translate([8,-5,0])
-        text("Copywrite John Orthoefer 2025", size=2, halign="center", valign="center");
+module topPlate() {
+    translate([0,0,0]) {
+        difference() {
+            roundedcube_corners(PLATE+[0,0,-0.75], center=true, radius = 1.0);
+            // Raspberry Pi Pico 2w
+            translate(PICOloc)
+                cutout2(size=PICO, thickness=4, flat=true);
+            // Adafruit Picowbell Adatalogger
+            translate(COWBELLloc)
+                cutout2(size=COWBELL, thickness=4, flat=true);
+            // Teyleten ATGM336H GPS
+            translate(GPSloc)
+                cutout2(size=GPS, thickness=4, flat=true); 
+            // Adafruit LIS3DH STEMMA Breakout
+            translate(ACCloc)
+                cutout2(size=ACC, thickness=4, flat=true);
+            // Geekstory ESP=01 Breakout
+            translate(ESPloc)
+                cutout2(size=ESP, thickness=4, flat=true);
+            translate(PIN1loc+[0,0,-1]) cylinder(h=PIN1[0], r=PIN1[1]+smidge, center=false);
+            translate(PIN2loc+[0,0,-1]) cylinder(h=PIN2[0], r=PIN2[1]+smidge, center=false);
+            translate(PIN3loc+[0,0,-1]) cylinder(h=PIN3[0], r=PIN3[1]+smidge, center=false);
+        }
+        translate([0,(-PLATE[1]/2)+7,0])
+        linear_extrude(height = text_height) {
+            text("OpenPonyLogger", size = font_size, halign="center", valign="center");
+            translate([8,-5,0])
+            text("Copywrite John Orthoefer 2025", size=2, halign="center", valign="center");
+        }
     }
 }
 
