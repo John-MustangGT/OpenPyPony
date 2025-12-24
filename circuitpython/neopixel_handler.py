@@ -75,7 +75,7 @@ class NeoPixelHandler:
             status_color = (0, 255, 0)
             breathe = True
         elif data['gps_fix'] and data['gps_hdop'] < 10:
-            status_color = (255, 255, 0)
+            status_color = (255, 191, 0)
             breathe = False
         else:
             status_color = (255, 0, 0)
@@ -85,12 +85,12 @@ class NeoPixelHandler:
             t = time.monotonic()
             intensity = 0.2 + 0.3 * (1 + math.sin(t / 6 * math.pi))
             self.pixel[0] = tuple(int(c * intensity) for c in status_color)
-        else:
-            if status_color == (255, 255, 0):
-                flash_on = int(time.monotonic() * 2) % 2
-                self.pixel[0] = status_color if flash_on else (0, 0, 0)
-            else:
-                self.pixel[0] = status_color
+        #else:
+        #    if status_color == (255, 255, 0):
+        #        flash_on = int(time.monotonic() * 2) % 2
+        #        self.pixel[0] = status_color if flash_on else (0, 0, 0)
+        #    else:
+        #        self.pixel[0] = status_color
         
         self.pixel[1] = self._g_to_color(gy)
         self.pixel[2] = self._tire_load_color(gx, gy, 'rf')
