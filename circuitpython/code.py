@@ -13,6 +13,7 @@ from sensors import init_sensors, get_sensor, list_sensors
 from unified_accelerometer import UnifiedAccelerometer
 from gps import GPS
 from session_logger import SessionLogger 
+from neopixel_handler import NeoPixelHandler
 
 # Import gyro/mag if available
 try:
@@ -121,7 +122,12 @@ def update_display_sensor_info():
 
 
 update_display_sensor_info()
-time.sleep(2)  # Show sensor list for 2 seconds
+neopixel_handler = None
+if hw.neopixel:
+    neopixel_handler = NeoPixelHandler(hw.pixel)
+    neopixel_handler.christmas_tree()
+else:
+    time.sleep(2)  # Show sensor list for 2 seconds
 
 # =============================================================================
 # Initialize Binary Logger
@@ -177,6 +183,8 @@ if hw.display:
     if gps_handler:
         splash.append(gps_label)
 
+# 
+# TODO - this needs to come from the config
 print("\n" + "="*60)
 print("Starting main loop...")
 print("  100Hz: Sensor reading + logging")
@@ -277,21 +285,11 @@ try:
         # 10Hz: Update NeoPixel (if available)
         if hw.pixel and current_time - last_pixel_update >= 0.1:
             last_pixel_update = current_time
-            
-            # Color based on sensors active
-            if accel:
-                gx_val, gy_val, gz_val = accel.get_g_forces()
-                g_total = (gx_val**2 + gy_val**2 + gz_val**2)**0.5
-                
-                # Green = low G, yellow = medium, red = high
-                if g_total < 0.5:
-                    color = (0, 50, 0)  # Green
-                elif g_total < 1.0:
-                    color = (50, 50, 0)  # Yellow
-                else:
-                    color = (50, 0, 0)  # Red
-                
-                hw.pixel.fill(color)
+            data = {}
+            data['gx'], data['gy'], data['gz'] = accel.get_g_forces()
+            data['gps_fix'] = gps_handler.has_fix()
+            data['gps_hdop'] = gps_handler.get_hdop()
+            neopixel_handler.update(data)
         
         # 1Hz: Heartbeat LED
         if current_time - last_heartbeat >= 1.0:

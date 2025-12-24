@@ -26,7 +26,7 @@ class NeoPixelHandler:
         intensity = min(abs(g_value) / max_g, 1.0)
         if g_value > 0.1:
             return (0, int(255 * intensity), 0)  # Green for positive
-        elif g_value < 0.1:
+        elif g_value < -0.1:
             return (int(255 * intensity), 0, 0)  # Red for negative
         else:
             return (0, 0, 0)  # Standing
@@ -64,17 +64,17 @@ class NeoPixelHandler:
         
         return (r, g, b)
 
-    def update(self, data, session):
+    def update(self, data):
         """
         Update NeoPixel Jewel based on G-force and system status
         """
-        gx = data['g']['x']
-        gy = data['g']['y']
+        gx = data['gx']
+        gy = data['gy']
         
-        if data['gps']['fix'] != "NoFix" and session.active:
+        if data['gps_fix'] and data['gps_hdop'] < 2.0:
             status_color = (0, 255, 0)
             breathe = True
-        elif data['gps']['fix'] != "NoFix" or session.active:
+        elif data['gps_fix'] and data['gps_hdop'] < 10:
             status_color = (255, 255, 0)
             breathe = False
         else:

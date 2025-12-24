@@ -347,15 +347,11 @@ def set_system_time(new_time):
         rtc_handler.set_time(new_time)
     else:
         # Set built-in RTC directly
-        year = new_time.tm_year
-        month = new_time.tm_mon
-        day = new_time.tm_mday
-        hour = new_time.tm_hour
-        minute = new_time.tm_min
-        second = new_time.tm_sec
-
         rtc.RTC().datetime = new_time
-        print(f"[RTC] System time set: {year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
+        print("[RTC] System time set: {:04d}-{:02d}-{:02d} {:02d}:{:02d}:{:02d}".format(
+            new_time.tm_year, new_time.tm_mon, new_time.tm_mday,
+            new_time.tm_hour, new_time.tm_min, new_time.tm_sec)
+        )
 
 
 def get_time_string():
@@ -376,7 +372,6 @@ def get_time_string():
             current.tm_year, current.tm_mon, current.tm_mday,
             current.tm_hour, current.tm_min, current.tm_sec
         )
-
 
 # =============================================================================
 # Direct Exports for Backward Compatibility
