@@ -146,6 +146,7 @@ print(f"\n✓ Session started: {session_id}")
 # =============================================================================
 
 loop_count = 0
+loop_Hz = 0
 last_telemetry = 0
 last_display_update = 0
 last_pixel_update = 0
@@ -292,21 +293,18 @@ try:
             neopixel_handler.update(data)
         
         # 1Hz: Heartbeat LED
-        if current_time - last_heartbeat >= 1.0:
+        heartbeat_length = current_time - last_heartbeat
+        if heartbeat_length >= 1.0:
             last_heartbeat = current_time
-            
-            if heartbeat_state:
-                hw.heartbeat.value = False
-                heartbeat_state = False
-            else:
-                hw.heartbeat.value = True
-                heartbeat_state = True
-                
-                # LED on-time indicates GPS status
-                if gps_has_fix:
-                    time.sleep(0.8)  # Long blink = GPS fix
-                else:
-                    time.sleep(0.2)  # Short blink = no fix
+            hw.heartbeat.value = True
+            print(f"{loop_Hz}Hz")
+            loop_Hz = 0
+        else:    
+            if hw.heartbeat.value:
+                if ((gps_has_fix and heartbeat_length >= 0.8) or 
+                    (not gps_has_fix and heartbeat_length >= 0.2)):
+                    hw.heartbeat.value = False
+                    heartbeat_state = False
         
         # 5 min: Log GPS satellites
         if gps_handler and current_time - last_gps_log >= 300:
@@ -324,9 +322,8 @@ try:
                     hw.set_system_time(dt)
                     print(f"[RTC] Synced from GPS: {hw.get_time_string()}")
         
-        # 100Hz timing
-        time.sleep(0.01)
         loop_count += 1
+        loop_Hz += 1
 
 except KeyboardInterrupt:
     print("\n\n" + "="*60)
