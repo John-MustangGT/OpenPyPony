@@ -10,9 +10,9 @@ import gc
 # Import hardware and sensors
 import hardware_setup as hw
 from sensors import init_sensors, get_sensor, list_sensors
-from accelerometer import UnifiedAccelerometer
+from unified_accelerometer import UnifiedAccelerometer
 from gps import GPS
-from binary_logger import BinaryLogger
+from session_logger import SessionLogger 
 
 # Import gyro/mag if available
 try:
@@ -53,7 +53,7 @@ mag = None
 gps_handler = None
 
 if sensors.get('accelerometer'):
-    accel = UnifiedAccelerometer(sensors['accelerometer'], hw.i2c)
+    accel = UnifiedAccelerometer(sensors['accelerometer'])
     print("✓ Accelerometer handler ready")
 
 if GYRO_AVAILABLE and get_sensor('gyroscope'):
@@ -65,7 +65,7 @@ if MAG_AVAILABLE and get_sensor('magnetometer'):
     print("✓ Magnetometer handler ready")
 
 if sensors.get('gps'):
-    gps_handler = GPS(sensors['gps'], sensors.get('gps_uart'))
+    gps_handler = GPS(get_sensor('gps'))
     print("✓ GPS handler ready")
 
 # =============================================================================
@@ -127,8 +127,12 @@ time.sleep(2)  # Show sensor list for 2 seconds
 # Initialize Binary Logger
 # =============================================================================
 
-logger = BinaryLogger("/sd")
-session_id = logger.start_session()
+logger = SessionLogger("/sd")
+session_id = logger.start_session(
+    session_name="Track Day",
+    driver_name="John",
+    vehicle_id="Ciara"
+)
 print(f"\n✓ Session started: {session_id}")
 
 # =============================================================================
@@ -213,7 +217,8 @@ try:
                 lat, lon, alt = gps_handler.get_position()
                 speed = gps_handler.get_speed()
                 heading = gps_handler.get_heading()
-                logger.write_gps(lat, lon, alt, speed, heading)
+                hdop = gps_handler.get_hdop()
+                logger.write_gps(lat, lon, alt, speed, heading, hdop)
             else:
                 gps_has_fix = False
         
@@ -310,7 +315,7 @@ try:
             last_gps_log = current_time
             sat_data = gps_handler.get_satellite_data()
             if sat_data:
-                logger.write_metadata(f"Satellites: {sat_data}")
+                print(f"[GPS] {sat_data}")
         
         # 60s: Sync RTC from GPS
         if gps_handler and gps_has_fix and current_time - last_rtc_sync >= 60:

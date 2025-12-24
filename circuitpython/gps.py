@@ -53,6 +53,78 @@ class GPS:
             else:
                 raise
 
+    def has_fix(self):
+        """Check if GPS has a fix"""
+        return self.gps.has_fix if self.gps else False
+
+    def get_position(self):
+        """
+        Get current position
+        
+        Returns:
+            tuple: (lat, lon, alt) or (0, 0, 0) if no fix
+        """
+        if not self.gps or not self.gps.has_fix:
+            return (0.0, 0.0, 0.0)
+        
+        lat = self.gps.latitude or 0.0
+        lon = self.gps.longitude or 0.0
+        alt = self.gps.altitude_m or 0.0
+        
+        return (lat, lon, alt)
+
+    def get_hdop(self):
+        """Get HDOP - Horizontal Dilution of Precision"""
+        if not self.gps or not self.gps.has_fix:
+            return 25.9
+        return self.gps.hdop
+    
+    def get_speed(self):
+        """Get speed in m/s"""
+        if not self.gps or not self.gps.has_fix:
+            return 0.0
+        return self.gps.speed_knots * 0.514444 if self.gps.speed_knots else 0.0
+    
+    def get_heading(self):
+        """Get heading in degrees"""
+        if not self.gps or not self.gps.has_fix:
+            return 0.0
+        return self.gps.track_angle_deg or 0.0
+    
+    def get_satellites(self):
+        """Get number of satellites"""
+        if not self.gps:
+            return 0
+        return self.gps.satellites or 0
+    
+    def has_time(self):
+        """Check if GPS has valid time"""
+        return self.gps.timestamp_utc is not None if self.gps else False
+    
+    def get_datetime(self):
+        """
+        Get datetime from GPS
+        
+        Returns:
+            time.struct_time or None
+        """
+        if not self.gps or not self.gps.timestamp_utc:
+            return None
+        return self.gps.timestamp_utc
+    
+    def get_satellite_data(self):
+        """
+        Get satellite data summary
+        
+        Returns:
+            str: Satellite count summary
+        """
+        if not self.gps:
+            return None
+        
+        sats = self.get_satellites()
+        return f"{sats} satellites in view"
+
     def read(self):
         """Read GPS data"""
         lat = self.gps.latitude if self.gps.has_fix else 0.0

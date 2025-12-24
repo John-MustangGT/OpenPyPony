@@ -235,7 +235,7 @@ def deploy_python_modules(drive_path, backup=True):
     python_modules = [
         "code.py",
         "debug.py",
-        "accelerometer.py",
+        "unified_accelerometer.py",
         "binary_logger.py",
         "config.py",
         "gps.py",
@@ -366,7 +366,7 @@ def clean_deployment(drive_path):
     python_modules = [
         "code.py",
         "debug.py",
-        "accelerometer.py",
+        "unified_accelerometer.py",
         "binary_logger.py",
         "config.py",
         "gps.py",
@@ -443,7 +443,7 @@ def validate_deployment(drive_path):
     
     # Optional modules (warn if missing but don't fail)
     optional_files = [
-        "accelerometer.py",
+        "unified_accelerometer.py",
         "binary_logger.py",
         "config.py",
         "gps.py",

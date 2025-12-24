@@ -595,6 +595,28 @@ class BinaryLogger:
         print(f"[BinaryLog] Session stopped: {self.log_filename}")
     
     # Convenience methods
+    def write_metadata(self, message):
+        """
+        Write metadata/comment to log
+    
+        Args:
+            message: String message to log
+    
+        Returns:
+            bool: True if successful
+        """
+        if not self.active:
+            return False
+    
+        try:
+            # Encode message as UTF-8
+            msg_bytes = message.encode('utf-8')
+            data = struct.pack(f'<{len(msg_bytes)}s', msg_bytes)
+            return self.write_sample(SAMPLE_TYPE_METADATA, data)
+        except Exception as e:
+            print(f"[Logger] Metadata write error: {e}")
+            return False
+
     def write_accelerometer(self, gx, gy, gz, timestamp_us=None):
         """Write accelerometer data"""
         data = struct.pack('<fff', gx, gy, gz)
