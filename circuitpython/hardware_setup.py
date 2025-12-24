@@ -274,8 +274,6 @@ if hw_config.is_enabled("rtc"):
             
     except Exception as e:
         print(f"✗ RTC error: {e}")
-        import traceback
-        traceback.print_exc()
 
 # =============================================================================
 # Summary
@@ -333,26 +331,29 @@ def get_rtc_type():
     return hardware.get('rtc_type')
 
 
-def set_system_time(year, month, day, hour, minute, second):
+def set_system_time(new_time):
     """
     Set system time (and optionally sync to RTC)
     
     Args:
-        year, month, day, hour, minute, second: Time components
+        datetime struct
+        
     """
     rtc_handler = get_rtc_handler()
     rtc_type = get_rtc_type()
     
     if rtc_type == 'pcf8523' and rtc_handler:
         # PCF8523 handler has set_time that syncs both
-        rtc_handler.set_time(year, month, day, hour, minute, second)
+        rtc_handler.set_time(new_time)
     else:
         # Set built-in RTC directly
-        new_time = time.struct_time((
-            year, month, day,
-            hour, minute, second,
-            0, -1, -1
-        ))
+        year = new_time.tm_year
+        month = new_time.tm_mon
+        day = new_time.tm_mday
+        hour = new_time.tm_hour
+        minute = new_time.tm_min
+        second = new_time.tm_sec
+
         rtc.RTC().datetime = new_time
         print(f"[RTC] System time set: {year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
 

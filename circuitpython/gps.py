@@ -75,7 +75,7 @@ class GPS:
 
     def get_hdop(self):
         """Get HDOP - Horizontal Dilution of Precision"""
-        if not self.gps or not self.gps.has_fix:
+        if not self.gps or not self.gps.has_fix or self.gps.hdop is None:
             return 25.9
         return self.gps.hdop
     

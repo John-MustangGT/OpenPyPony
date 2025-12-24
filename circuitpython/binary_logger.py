@@ -635,6 +635,7 @@ class BinaryLogger:
     
     def write_gps(self, lat, lon, alt, speed, heading, hdop, timestamp_us=None):
         """Write GPS fix data"""
+        #print(f"{lat} {lon} {alt} {speed} {heading} {hdop}")
         data = struct.pack('<ddffff', lat, lon, alt, speed, heading, hdop)
         return self.write_sample(SAMPLE_TYPE_GPS_FIX, data, timestamp_us)
     

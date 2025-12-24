@@ -105,21 +105,16 @@ class PCF8523Handler:
             print(f"[RTC] Failed to sync to PCF8523: {e}")
             return False
     
-    def set_time(self, year, month, day, hour, minute, second):
+    def set_time(self, new_time):
         """
         Set time on both system and PCF8523 (if sync_to_rtc enabled)
         
         Args:
-            year, month, day, hour, minute, second: Time components
+            dt : struct_datetime
         """
-        # Create time struct
-        new_time = time.struct_time((
-            year, month, day,
-            hour, minute, second,
-            0,  # weekday (will be calculated)
-            -1,  # yearday (will be calculated)
-            -1   # isdst
-        ))
+
+        year = new_time.tm_year
+//, month, day, hour, minute, second, weekend, daynum, dst = new_time.timetuple()
         
         # Set system RTC
         rtc.RTC().datetime = new_time
