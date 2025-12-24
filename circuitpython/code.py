@@ -254,7 +254,8 @@ try:
             if gps_handler and gps_has_fix:
                 lat, lon, alt = gps_handler.get_position()
                 sats = gps_handler.get_satellites()
-                print(f"GPS: {sats} sats")
+                hdop = gps_handler.get_hdop()
+                print(f"GPS: {sats} sats @{hdop}")
             else:
                 print("GPS: No fix")
             
