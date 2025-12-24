@@ -50,6 +50,8 @@ class GPS:
         except ValueError as e:
             if "invalid syntax for integer" in str(e):
                 pass  # Ignore timestamp errors during GPS acquisition
+            if "index out of range" in str(e):
+                pass  # Ignore bad parse of data
             else:
                 raise
 
