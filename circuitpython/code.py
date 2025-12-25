@@ -157,6 +157,9 @@ last_rtc_sync = 0
 heartbeat_state = False
 gps_has_fix = False
 
+# empty last value
+data = { 'gps': {}, 'gyro': {}, 'accel': {}, 'mag': {} }
+
 # Display labels
 if hw.display:
     from displayio import Group
@@ -206,30 +209,36 @@ try:
         
         # 100Hz: Read sensors and log
         if accel:
-            ax, ay, az, accel_ts = accel.read()
-            gx_val, gy_val, gz_val = accel.get_g_forces()
-            logger.write_accelerometer(gx_val, gy_val, gz_val)
+            data['accel']['ax'], data['accel']['ay'], data['accel']['az'], data['accel']['ts'] = accel.read()
+            data['accel']['gx'], data['accel']['gy'], data['accel']['gz'] = accel.get_g_forces()
+            logger.write_accelerometer(data['accel']['gx'], data['accel']['gy'], data['accel']['gz'])
         
         if gyro:
-            gx, gy, gz, gyro_ts = gyro.read()
-            logger.write_gyroscope(gx, gy, gz)
+            data['gyro']['gx'], data['gyro']['gy'], data['gyro']['gz'] = gyro.read()
+            data['gyro']['ang_vel'] = gyro.get_angular_velocity()
+            logger.write_gyroscope(data['gyro']['gx'], data['gyro']['gy'], data['gyro']['gz'])
         
         if mag:
-            mx, my, mz, mag_ts = mag.read()
-            logger.write_magnetometer(mx, my, mz)
+            data['mag']['mx'], data['mag']['my'], data['mag']['mz'] = mag.read()
+            data['mag']['heading'] = mag.get_heading()
+            data['mag']['field'] = mag.get_field_strength()
+            logger.write_magnetometer(data['mag']['mx'], data['mag']['my'], data['mag']['mz'])
         
         # Update GPS
         if gps_handler:
             gps_handler.update()
             if gps_handler.has_fix():
                 gps_has_fix = True
-                lat, lon, alt = gps_handler.get_position()
-                speed = gps_handler.get_speed()
-                heading = gps_handler.get_heading()
-                hdop = gps_handler.get_hdop()
-                logger.write_gps(lat, lon, alt, speed, heading, hdop)
+                data['gps']['lat'], data['gps']['lon'], data['gps']['alt'] = gps_handler.get_position()
+                data['gps']['speed'] = gps_handler.get_speed()
+                data['gps']['heading'] = gps_handler.get_heading()
+                data['gps']['hdop'] = gps_handler.get_hdop()
+                data['gps']['sats'] = gps_handler.get_satellites()
+                logger.write_gps(data['gps']['lat'], data['gps']['lon'], data['gps']['alt'], 
+                    data['gps']['speed'], data['gps']['heading'], data['gps']['hdop'])
             else:
                 gps_has_fix = False
+            data['gps']['has_fix'] = gps_has_fix
         
         # 1Hz: Telemetry
         if current_time - last_telemetry >= 1.0:
@@ -239,23 +248,22 @@ try:
             print(f"[{int(current_time)}s] ", end="")
             
             if accel:
-                gx_val, gy_val, gz_val = accel.get_g_forces()
-                print(f"Accel: {gx_val:+.2f}g {gy_val:+.2f}g {gz_val:+.2f}g | ", end="")
+                print("Accel: {:+.2f}g {:+.2f}g {:+.2f}g | ".format(
+                    data['accel']['gx'], data['accel']['gy'], data['accel']['gz']), end="")
             
             if gyro:
-                gx, gy, gz = gyro.get_last_reading()
-                print(f"Gyro: {gx:+.1f}°/s {gy:+.1f}°/s {gz:+.1f}°/s | ", end="")
+                print("Gyro: {:+.1f}°/s {:+.1f}°/s {:+.1f}°/s | ".format(
+                    data['gyro']['gx'], data['gyro']['gy'], data['gyro']['gz']), end="")
             
             if mag:
                 heading = mag.get_heading()
                 field = mag.get_field_strength()
-                print(f"Mag: {heading:.0f}° {field:.1f}µT | ", end="")
+                print("Mag: {:.0f}° {:.1f}µT | ".format(
+                    data['mag']['heading'],data['mag']['field']) , end="")
             
             if gps_handler and gps_has_fix:
-                lat, lon, alt = gps_handler.get_position()
-                sats = gps_handler.get_satellites()
-                hdop = gps_handler.get_hdop()
-                print(f"GPS: {sats} sats @{hdop}")
+                print("GPS: {} sats @{}".format(
+                    data['gps']['sats'], data['gps']['hdop']))
             else:
                 print("GPS: No fix")
             
@@ -265,32 +273,25 @@ try:
         if hw.display and current_time - last_display_update >= 0.2:
             last_display_update = current_time
             
+            # I think this should be gy...
             if accel:
-                gx_val, gy_val, gz_val = accel.get_g_forces()
-                accel_label.text = f"A:{gx_val:+.2f}g"
+                accel_label.text = "A:{:+.2f}g".format(data['accel']['gx'])
             
             if gyro:
-                ang_vel = gyro.get_angular_velocity()
-                gyro_label.text = f"G:{ang_vel:.0f}°/s"
+                gyro_label.text = "G:{ang_vel:.0f}°/s".format(data['gyro']['ang_vel'])
             
             if mag:
-                heading = mag.get_heading()
-                mag_label.text = f"M:{heading:.0f}°"
+                mag_label.text = "M:{:.0f}°".format(data['mag']['heading'])
             
             if gps_handler:
                 if gps_has_fix:
-                    sats = gps_handler.get_satellites()
-                    gps_label.text = f"GPS:{sats}sat"
+                    gps_label.text = "GPS:{}sat".format(data['gps']['sats'])
                 else:
                     gps_label.text = "GPS:NoFix"
         
         # 10Hz: Update NeoPixel (if available)
-        if hw.pixel and current_time - last_pixel_update >= 0.1:
+        if hw.neopixel and current_time - last_pixel_update >= 0.1:
             last_pixel_update = current_time
-            data = {}
-            data['gx'], data['gy'], data['gz'] = accel.get_g_forces()
-            data['gps_fix'] = gps_handler.has_fix()
-            data['gps_hdop'] = gps_handler.get_hdop()
             neopixel_handler.update(data)
         
         # 1Hz: Heartbeat LED

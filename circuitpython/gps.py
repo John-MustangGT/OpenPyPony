@@ -48,10 +48,9 @@ class GPS:
             self.gps.update()
             self.sat_tracker.update(self.gps)
         except ValueError as e:
-            if ("invalid syntax for integer with base 10" in str(e) or
-                "invalid syntax for integer" in str(e)):
+            if "invalid syntax for integer" in str(e):
                 pass  # Ignore timestamp errors during GPS acquisition
-            if "index out of range" in str(e):
+            elif "index out of range" in str(e):
                 pass  # Ignore bad parse of data
             else:
                 raise
