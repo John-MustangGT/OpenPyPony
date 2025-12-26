@@ -24,7 +24,7 @@ class OLED:
     def show_splash(self, status_text="Initializing..."):
         """Display OpenPony splash screen"""
         self.splash_group = displayio.Group()
-        
+
         # Title (Large font)
         title = label.Label(terminalio.FONT, text="OpenPony", color=0xFFFFFF, x=5, y=8, scale=2)
         self.splash_group.append(title)
@@ -59,28 +59,33 @@ class OLED:
         time.sleep(0.3)
         self.display.root_group = self.main_group
 
-    def update(self, data, session, rtc_handler):
+##jco##    def update(self, data, session, rtc_handler):
+    def update(self, data, session):
         """Update OLED display with enhanced format"""
-        
+
         # Line 1: {HH:MM:SS} {GPS Fix} {HDOP bars}
         now = time.localtime()
         time_str = f"{now.tm_hour:02d}:{now.tm_min:02d}:{now.tm_sec:02d}"
-        if rtc_handler.synced:
-            time_str += chr(0x0f)
-        else:
-            time_str += chr(0x07)
+##jco##        if rtc_handler.synced:
+##jco##            time_str += chr(0x0f)
+##jco##        else:
+##jco##            time_str += chr(0x07)
         
+        fix_str = "NoFix"
+        hdop = 25.0
         fix_str = data['gps']['fix']
+        hdop = data['gps']['hdop']
+
         ## hdop_bars_val = hdop_to_bars(data['gps']['hdop'])
         ## bars = "[" + "■" * hdop_bars_val + " " * (3 - hdop_bars_val) + "]"
         
-        self.line1.text = f"{time_str} {fix_str:5s} {data['gps']['hdop']:.1f}"
+        self.line1.text = f"{time_str} {fix_str:5s} {hdop:.1f}"
         
         # Line 2: Lat/Long
         self.line2.text = f"{data['gps']['lat']} {data['gps']['lon']}"
         
         # Line 3: {MPH} {Total G Force}
-        self.line3.text = f"{data['gps']['speed']:3.0f}MPH  {data['g']['total']:.2f}g"
+        self.line3.text = f"{data['gps']['speed']:3.0f}MPH  {data['accel']['total']:+.2f}g"
         
         # Line 4: {Log file name} {File record time}
         if session.active:
@@ -104,6 +109,7 @@ class OLED:
             sd_stat = os.statvfs("/sd")
             free_gb = (sd_stat[0] * sd_stat[3]) / (1024**3)
             self.line5.text = f"SD: {free_gb:.1f}GB free"
+        self.display.root_group = self.main_group
 
     def set_splash_status(self, text):
         if self.splash_status:

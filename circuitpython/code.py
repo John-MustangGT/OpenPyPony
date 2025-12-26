@@ -14,6 +14,7 @@ from unified_accelerometer import UnifiedAccelerometer
 from gps import GPS
 from session_logger import SessionLogger 
 from neopixel_handler import NeoPixelHandler
+from oled import OLED
 
 # Import gyro/mag if available
 try:
@@ -52,6 +53,7 @@ accel = None
 gyro = None
 mag = None
 gps_handler = None
+neopixel_handler = None
 
 if sensors.get('accelerometer'):
     accel = UnifiedAccelerometer(sensors['accelerometer'])
@@ -68,6 +70,13 @@ if MAG_AVAILABLE and get_sensor('magnetometer'):
 if sensors.get('gps'):
     gps_handler = GPS(get_sensor('gps'))
     print("✓ GPS handler ready")
+
+if hw.display:
+    oled_handler = OLED(hw.display)
+    oled_handler.setup_main_display()
+
+if hw.neopixel:
+    neopixel_handler = NeoPixelHandler(hw.pixel)
 
 # =============================================================================
 # Display Active Sensors on OLED
@@ -121,10 +130,12 @@ def update_display_sensor_info():
     hw.display.root_group = splash
 
 
-update_display_sensor_info()
-neopixel_handler = None
-if hw.neopixel:
-    neopixel_handler = NeoPixelHandler(hw.pixel)
+if oled_handler:
+    oled_handler.show_splash()
+    time.sleep(2)
+    
+#update_display_sensor_info()
+if neopixel_handler:
     neopixel_handler.christmas_tree()
 else:
     time.sleep(2)  # Show sensor list for 2 seconds
@@ -160,33 +171,6 @@ gps_has_fix = False
 # empty last value
 data = { 'gps': {}, 'gyro': {}, 'accel': {}, 'mag': {} }
 
-# Display labels
-if hw.display:
-    from displayio import Group
-    from adafruit_display_text import label
-    import terminalio
-    
-    splash = Group()
-    hw.display.root_group = splash
-    
-    title_label = label.Label(terminalio.FONT, text="OpenPonyLogger", color=0xFFFFFF, x=10, y=5)
-    status_label = label.Label(terminalio.FONT, text="Logging...", color=0xFFFFFF, x=5, y=16)
-    accel_label = label.Label(terminalio.FONT, text="A: ---", color=0xFFFFFF, x=5, y=28)
-    gyro_label = label.Label(terminalio.FONT, text="G: ---", color=0xFFFFFF, x=5, y=38)
-    mag_label = label.Label(terminalio.FONT, text="M: ---", color=0xFFFFFF, x=5, y=48)
-    gps_label = label.Label(terminalio.FONT, text="GPS: No fix", color=0xFFFFFF, x=5, y=58)
-    
-    splash.append(title_label)
-    splash.append(status_label)
-    if accel:
-        splash.append(accel_label)
-    if gyro:
-        splash.append(gyro_label)
-    if mag:
-        splash.append(mag_label)
-    if gps_handler:
-        splash.append(gps_label)
-
 # 
 # TODO - this needs to come from the config
 print("\n" + "="*60)
@@ -211,6 +195,7 @@ try:
         if accel:
             data['accel']['ax'], data['accel']['ay'], data['accel']['az'], data['accel']['ts'] = accel.read()
             data['accel']['gx'], data['accel']['gy'], data['accel']['gz'] = accel.get_g_forces()
+            data['accel']['total'] = data['accel']['gx'] + data['accel']['gy']
             logger.write_accelerometer(data['accel']['gx'], data['accel']['gy'], data['accel']['gz'])
         
         if gyro:
@@ -229,6 +214,7 @@ try:
             gps_handler.update()
             if gps_handler.has_fix():
                 gps_has_fix = True
+                data['gps']['fix'] = gps_handler.fix_type()
                 data['gps']['lat'], data['gps']['lon'], data['gps']['alt'] = gps_handler.get_position()
                 data['gps']['speed'] = gps_handler.get_speed()
                 data['gps']['heading'] = gps_handler.get_heading()
@@ -238,6 +224,16 @@ try:
                     data['gps']['speed'], data['gps']['heading'], data['gps']['hdop'])
             else:
                 gps_has_fix = False
+                data['gps'] = {
+                    'fix':      "NoFix",
+                    'lat':      0.0,
+                    'lon':      0.0,
+                    'alt':      0.0,
+                    'speed':    0.0,
+                    'heading':  0.0,
+                    'hdop':    25.9,
+                    'stats':    0,
+                }
             data['gps']['has_fix'] = gps_has_fix
         
         # 1Hz: Telemetry
@@ -272,23 +268,8 @@ try:
         # 5Hz: Update display
         if hw.display and current_time - last_display_update >= 0.2:
             last_display_update = current_time
+            oled_handler.update(data, logger)
             
-            # I think this should be gy...
-            if accel:
-                accel_label.text = "A:{:+.2f}g".format(data['accel']['gx'])
-            
-            if gyro:
-                gyro_label.text = "G:{ang_vel:.0f}°/s".format(data['gyro']['ang_vel'])
-            
-            if mag:
-                mag_label.text = "M:{:.0f}°".format(data['mag']['heading'])
-            
-            if gps_handler:
-                if gps_has_fix:
-                    gps_label.text = "GPS:{}sat".format(data['gps']['sats'])
-                else:
-                    gps_label.text = "GPS:NoFix"
-        
         # 10Hz: Update NeoPixel (if available)
         if hw.neopixel and current_time - last_pixel_update >= 0.1:
             last_pixel_update = current_time
