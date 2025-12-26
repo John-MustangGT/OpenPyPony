@@ -59,17 +59,17 @@ class OLED:
         time.sleep(0.3)
         self.display.root_group = self.main_group
 
-##jco##    def update(self, data, session, rtc_handler):
-    def update(self, data, session):
+    def update(self, data, session, rtc_handler):
+#    def update(self, data, session):
         """Update OLED display with enhanced format"""
 
         # Line 1: {HH:MM:SS} {GPS Fix} {HDOP bars}
         now = time.localtime()
         time_str = f"{now.tm_hour:02d}:{now.tm_min:02d}:{now.tm_sec:02d}"
-##jco##        if rtc_handler.synced:
-##jco##            time_str += chr(0x0f)
-##jco##        else:
-##jco##            time_str += chr(0x07)
+        if rtc_handler.synced:
+            time_str += chr(0x0f)
+        else:
+            time_str += chr(0x07)
         
         fix_str = "NoFix"
         hdop = 25.0

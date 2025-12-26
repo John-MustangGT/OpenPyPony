@@ -15,6 +15,8 @@ from gps import GPS
 from session_logger import SessionLogger 
 from neopixel_handler import NeoPixelHandler
 from oled import OLED
+from rtc_handler import RTCHandler
+from pcf8523_rtc import PCF8523Handler
 
 # Import gyro/mag if available
 try:
@@ -54,6 +56,8 @@ gyro = None
 mag = None
 gps_handler = None
 neopixel_handler = None
+rtc = None
+pfc8523 = None
 
 if sensors.get('accelerometer'):
     accel = UnifiedAccelerometer(sensors['accelerometer'])
@@ -77,6 +81,11 @@ if hw.display:
 
 if hw.neopixel:
     neopixel_handler = NeoPixelHandler(hw.pixel)
+
+if hw.rtc:
+    rtc = RTCHandler()
+    pfc8523 = PCF8523Handler(hw.i2c)
+    pfc8523.sync_from_rtc_to_system()
 
 # =============================================================================
 # Display Active Sensors on OLED
@@ -134,7 +143,6 @@ if oled_handler:
     oled_handler.show_splash()
     time.sleep(2)
     
-#update_display_sensor_info()
 if neopixel_handler:
     neopixel_handler.christmas_tree()
 else:
@@ -268,7 +276,7 @@ try:
         # 5Hz: Update display
         if hw.display and current_time - last_display_update >= 0.2:
             last_display_update = current_time
-            oled_handler.update(data, logger)
+            oled_handler.update(data, logger, rtc)
             
         # 10Hz: Update NeoPixel (if available)
         if hw.neopixel and current_time - last_pixel_update >= 0.1:

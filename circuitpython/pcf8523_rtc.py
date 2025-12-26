@@ -113,8 +113,12 @@ class PCF8523Handler:
             dt : struct_datetime
         """
 
-        year = new_time.tm_year
-//, month, day, hour, minute, second, weekend, daynum, dst = new_time.timetuple()
+        year   = new_time.tm_year
+        month  = new_time.tm_mon
+        day    = new_time.tm_mday
+        hour   = new_time.tm_hour
+        minute = new_time.tm_min
+        second = new_time.tm_sec
         
         # Set system RTC
         rtc.RTC().datetime = new_time
