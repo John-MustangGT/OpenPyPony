@@ -476,7 +476,7 @@ class BinaryLogger:
     
     def start_session(self, session_name="", driver_name="", vehicle_id="",
                      weather=WEATHER_UNKNOWN, ambient_temp=0, config_crc=0,
-                     include_hardware=True, filename=None):
+                     include_hardware=True):
         """
         Start a new logging session
     
@@ -488,7 +488,6 @@ class BinaryLogger:
             ambient_temp: Ambient temperature in °C
             config_crc: Configuration CRC
             include_hardware: If True, write hardware config block (default: True)
-            filename: Optional filename (if None, generates timestamp-based name)
         """
         if self.active:
             self.stop_session()
@@ -499,18 +498,20 @@ class BinaryLogger:
             weather, ambient_temp, config_crc
         )
         
-        # Use provided filename or generate fallback
-        print(f"[BinaryLog Debug] start_session() called")
-        print(f"[BinaryLog Debug]   filename parameter: {filename}")
-        
-        if filename:
-            self.log_filename = filename
-            print(f"[BinaryLog Debug]   Using provided filename: {self.log_filename}")
-        else:
-            # Fallback: timestamp-based (when called directly, not via SessionLogger)
+        # Generate filename using sequential numbering
+        try:
+            from sdcard import get_sdcard
+            sd = get_sdcard()
+            if sd and sd.mounted:
+                self.log_filename = sd.create_session_filename('opl')
+            else:
+                # Fallback to timestamp-based naming
+                timestamp = int(time.monotonic())
+                self.log_filename = f"{self.base_path}/session_{timestamp}.opl"
+        except:
+            # Fallback to timestamp-based naming
             timestamp = int(time.monotonic())
             self.log_filename = f"{self.base_path}/session_{timestamp}.opl"
-            print(f"[BinaryLog Debug]   Generated timestamp filename: {self.log_filename}")
         
         self.bytes_written = 0
         # Open log file and write session header
