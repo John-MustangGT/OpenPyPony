@@ -138,19 +138,22 @@ try:
         # Read accelerometer
         gx, gy, gz = accel.get_gforce()
 
-        # Prepare data for logging
+        # Prepare data for logging (handle None values from GPS)
+        position = gps.get_position() if gps.has_fix() else (0.0, 0.0, 0.0)
+        speed = gps.get_speed() if gps.has_fix() else 0.0
+
         gps_data = {
-            'lat': gps.get_position()[0] if gps.has_fix() else 0.0,
-            'lon': gps.get_position()[1] if gps.has_fix() else 0.0,
-            'alt': gps.get_position()[2] if gps.has_fix() else 0.0,
-            'speed': gps.get_speed() if gps.has_fix() else 0.0,
-            'satellites': gps.get_satellites()
+            'lat': position[0] or 0.0,
+            'lon': position[1] or 0.0,
+            'alt': position[2] or 0.0,
+            'speed': speed or 0.0,
+            'satellites': gps.get_satellites() or 0
         }
 
         accel_data = {
-            'gx': gx,
-            'gy': gy,
-            'gz': gz
+            'gx': gx or 0.0,
+            'gy': gy or 0.0,
+            'gz': gz or 1.0  # Default to 1g for z-axis if None
         }
 
         # Log data frame
@@ -161,18 +164,18 @@ try:
         if loop_count % 10 == 0:
             if gps.has_fix():
                 print(f"[{int(current_time)}s] GPS: {gps_data['lat']:.6f}, {gps_data['lon']:.6f} | "
-                      f"Speed: {gps_data['speed']:.1f} m/s | G: {gx:+.2f}, {gy:+.2f}, {gz:+.2f}")
+                      f"Speed: {gps_data['speed']:.1f} m/s | G: {accel_data['gx']:+.2f}, {accel_data['gy']:+.2f}, {accel_data['gz']:+.2f}")
             else:
-                print(f"[{int(current_time)}s] GPS: No fix ({gps.get_satellites()} sats) | "
-                      f"G: {gx:+.2f}, {gy:+.2f}, {gz:+.2f}")
+                print(f"[{int(current_time)}s] GPS: No fix ({gps_data['satellites']} sats) | "
+                      f"G: {accel_data['gx']:+.2f}, {accel_data['gy']:+.2f}, {accel_data['gz']:+.2f}")
 
         # Update display (5Hz)
         if hal.has_display() and (current_time - last_display_update) >= 0.2:
             display.clear()
             display.text("OpenPonyLogger", 0, 0)
-            display.text(f"Sats: {gps.get_satellites()}", 0, 12)
+            display.text(f"Sats: {gps_data['satellites']}", 0, 12)
             display.text(f"Speed: {gps_data['speed']:.1f} m/s", 0, 24)
-            display.text(f"G: {gx:+.1f} {gy:+.1f} {gz:+.1f}", 0, 36)
+            display.text(f"G: {accel_data['gx']:+.1f} {accel_data['gy']:+.1f} {accel_data['gz']:+.1f}", 0, 36)
             display.show()
             last_display_update = current_time
 
