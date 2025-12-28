@@ -676,9 +676,14 @@ class SSD1306(DisplayInterface):
         else:
             self._labels[0].text = "GPS: No Fix"
 
-        # Line 2: Satellites
+        # Line 2: Satellites + Fix Type + HDOP
         sats = gps_data.get('satellites', 0)
-        self._labels[1].text = f"Sats: {sats}"
+        fix_type = gps_data.get('fix_type', 'No Fix')
+        hdop = gps_data.get('hdop', 99.9)
+        if hdop and hdop < 99:
+            self._labels[1].text = f"{sats}sat {fix_type} H:{hdop:.1f}"
+        else:
+            self._labels[1].text = f"{sats}sat {fix_type}"
 
         # Line 3: Speed
         speed = gps_data.get('speed', 0.0) * 2.237

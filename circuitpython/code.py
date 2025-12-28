@@ -139,6 +139,13 @@ loop_count = 0
 last_display_update = 0
 session_start_time = time.monotonic()
 
+# Exponential Moving Average state for display smoothing
+# EMA formula: smoothed = alpha * new_value + (1 - alpha) * previous_smoothed
+EMA_ALPHA = 0.2  # Higher = more responsive, Lower = more smoothed
+ema_gx = 0.0
+ema_gy = 0.0
+ema_gz = 1.0
+
 try:
     while True:
         current_time = time.monotonic()
@@ -146,7 +153,7 @@ try:
         # Update GPS
         gps.update()
 
-        # Read accelerometer
+        # Read accelerometer (RAW values for logging)
         gx, gy, gz = accel.get_gforce()
 
         # Prepare data for logging (handle None values from GPS)
@@ -158,13 +165,26 @@ try:
             'lon': position[1] or 0.0,
             'alt': position[2] or 0.0,
             'speed': speed or 0.0,
-            'satellites': gps.get_satellites() or 0
+            'satellites': gps.get_satellites() or 0,
+            'fix_type': gps.get_fix_type(),
+            'hdop': gps.get_hdop() or 99.9
         }
 
         accel_data = {
             'gx': gx or 0.0,
             'gy': gy or 0.0,
             'gz': gz or 1.0  # Default to 1g for z-axis if None
+        }
+
+        # Apply EMA smoothing for display ONLY (log raw values!)
+        ema_gx = EMA_ALPHA * accel_data['gx'] + (1.0 - EMA_ALPHA) * ema_gx
+        ema_gy = EMA_ALPHA * accel_data['gy'] + (1.0 - EMA_ALPHA) * ema_gy
+        ema_gz = EMA_ALPHA * accel_data['gz'] + (1.0 - EMA_ALPHA) * ema_gz
+
+        accel_data_smoothed = {
+            'gx': ema_gx,
+            'gy': ema_gy,
+            'gz': ema_gz
         }
 
         # Log data frame
@@ -191,8 +211,8 @@ try:
                     'duration': duration
                 }
 
-            # Update display labels (no clear/redraw!)
-            display.update_main_display(gps_data, accel_data, session_info)
+            # Update display labels with SMOOTHED G-forces (no clear/redraw!)
+            display.update_main_display(gps_data, accel_data_smoothed, session_info)
             last_display_update = current_time
 
         loop_count += 1
