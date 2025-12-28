@@ -608,7 +608,7 @@ class SSD1306(DisplayInterface):
         if gps_data.get('satellites', 0) > 0:
             lat = gps_data.get('lat', 0.0)
             lon = gps_data.get('lon', 0.0)
-            self._labels[0].text = f"GPS: {lat:.4f},{lon:.4f}"
+            self._labels[0].text = f"GPS: {lat:+.2f},{lon:+.2f}"
         else:
             self._labels[0].text = "GPS: No Fix"
 
@@ -617,8 +617,8 @@ class SSD1306(DisplayInterface):
         self._labels[1].text = f"Sats: {sats}"
 
         # Line 3: Speed
-        speed = gps_data.get('speed', 0.0)
-        self._labels[2].text = f"Speed: {speed:.1f} m/s"
+        speed = gps_data.get('speed', 0.0) * 2.237
+        self._labels[2].text = f"Speed: {speed:2.1f} MPH"
 
         # Line 4: G-forces
         gx = accel_data.get('gx', 0.0)
