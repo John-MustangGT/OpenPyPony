@@ -1,27 +1,23 @@
-# OpenPonyLogger - CircuitPython Deployment Makefile
+# OpenPonyLogger - Deployment Makefile (TOML-based)
+#
+# Uses deploy.toml for configuration
 #
 # Common tasks:
-#   make deploy       - Deploy logger.py to Pico (auto-detect drive)
-#   make clean-deploy - Clean install
-#   make install-deps - Install CircuitPython libraries
-#   make reset-pico   - Factory reset Pico filesystem
-#   make check        - Check CIRCUITPY drive
+#   make deploy       - Deploy using deploy.toml settings
+#   make deploy-mpy   - Deploy with .mpy compilation
+#   make clean-deploy - Deploy and clean orphaned files
+#   make backup       - Create backup only
+#   make validate     - Validate current deployment
 #   make help         - Show this help
 
 # Python interpreter
 PYTHON := python3
 
 # Deployment script
-DEPLOY_SCRIPT := tools/deploy_to_pico.py
+DEPLOY_SCRIPT := deploy_to_pico.py
 
-# Auto-detect CIRCUITPY drive
-DRIVE ?= $(shell $(PYTHON) -c "import platform; \
-	from pathlib import Path; \
-	system = platform.system(); \
-	paths = ['/Volumes/CIRCUITPY'] if system == 'Darwin' else \
-	        ['/media/CIRCUITPY', '/media/$$USER/CIRCUITPY', '/run/media/$$USER/CIRCUITPY'] if system == 'Linux' else \
-	        [f'{chr(d)}:/CIRCUITPY' for d in range(68, 91)]; \
-	print(next((str(p) for p in [Path(x) for x in paths] if p.exists()), ''))")
+# Configuration file
+DEPLOY_CONFIG := deploy.toml
 
 # Colors for output
 COLOR_RESET := \033[0m
@@ -29,186 +25,115 @@ COLOR_BOLD := \033[1m
 COLOR_GREEN := \033[92m
 COLOR_YELLOW := \033[93m
 COLOR_CYAN := \033[96m
-COLOR_RED := \033[91m
 
 .PHONY: help
 help:
 	@echo ""
-	@echo "$(COLOR_BOLD)OpenPonyLogger - CircuitPython Deployment$(COLOR_RESET)"
+	@echo "$(COLOR_BOLD)OpenPonyLogger - TOML-Based Deployment$(COLOR_RESET)"
 	@echo ""
 	@echo "$(COLOR_CYAN)Quick Commands:$(COLOR_RESET)"
-	@echo "  $(COLOR_GREEN)make deploy$(COLOR_RESET)       - Deploy logger.py to Pico (auto-detect drive)"
-	@echo "  $(COLOR_GREEN)make clean-deploy$(COLOR_RESET) - Clean install (removes old files)"
-	@echo "  $(COLOR_GREEN)make install-deps$(COLOR_RESET) - Install CircuitPython libraries (requires circup)"
-	@echo "  $(COLOR_GREEN)make reset-pico$(COLOR_RESET)   - Factory reset Pico filesystem (WARNING: DELETES ALL DATA)"
+	@echo "  $(COLOR_GREEN)make deploy$(COLOR_RESET)       - Deploy using deploy.toml settings"
+	@echo "  $(COLOR_GREEN)make deploy-mpy$(COLOR_RESET)   - Deploy with .mpy bytecode compilation"
+	@echo "  $(COLOR_GREEN)make clean-deploy$(COLOR_RESET) - Deploy and delete orphaned files"
+	@echo "  $(COLOR_GREEN)make validate$(COLOR_RESET)     - Validate deployment (check files)"
+	@echo ""
+	@echo "$(COLOR_CYAN)Configuration:$(COLOR_RESET)"
+	@echo "  $(COLOR_GREEN)make edit-config$(COLOR_RESET)  - Edit deploy.toml"
+	@echo "  $(COLOR_GREEN)make show-config$(COLOR_RESET)  - Show current configuration"
+	@echo ""
+	@echo "$(COLOR_CYAN)Backup & Restore:$(COLOR_RESET)"
+	@echo "  $(COLOR_GREEN)make backup$(COLOR_RESET)       - Create backup of Pico contents"
+	@echo "  $(COLOR_GREEN)make list-backups$(COLOR_RESET) - List available backups"
 	@echo ""
 	@echo "$(COLOR_CYAN)Development:$(COLOR_RESET)"
 	@echo "  $(COLOR_GREEN)make check$(COLOR_RESET)        - Check if CIRCUITPY drive is mounted"
-	@echo "  $(COLOR_GREEN)make backup$(COLOR_RESET)       - Backup current Pico files"
 	@echo "  $(COLOR_GREEN)make serial$(COLOR_RESET)       - Connect to serial console"
-	@echo "  $(COLOR_GREEN)make validate$(COLOR_RESET)     - Validate current deployment"
-	@echo "  $(COLOR_GREEN)make diff$(COLOR_RESET)         - Show what would be deployed"
+	@echo "  $(COLOR_GREEN)make install-deps$(COLOR_RESET) - Install CircuitPython libraries (circup)"
 	@echo ""
-	@echo "$(COLOR_CYAN)Manual:$(COLOR_RESET)"
+	@echo "$(COLOR_CYAN)Manual Override:$(COLOR_RESET)"
 	@echo "  $(COLOR_GREEN)make deploy DRIVE=/Volumes/CIRCUITPY$(COLOR_RESET)"
+	@echo "  $(COLOR_GREEN)make deploy CONFIG=custom.toml$(COLOR_RESET)"
 	@echo ""
+
+.PHONY: deploy
+deploy:
+	@echo "$(COLOR_BOLD)Deploying with deploy.toml configuration$(COLOR_RESET)"
+	@$(PYTHON) $(DEPLOY_SCRIPT) $(if $(CONFIG),--config $(CONFIG)) $(if $(DRIVE),--drive $(DRIVE))
+
+.PHONY: deploy-mpy
+deploy-mpy:
+	@echo "$(COLOR_BOLD)Deploying with .mpy compilation$(COLOR_RESET)"
+	@$(PYTHON) $(DEPLOY_SCRIPT) --mpy $(if $(CONFIG),--config $(CONFIG)) $(if $(DRIVE),--drive $(DRIVE))
+
+.PHONY: clean-deploy
+clean-deploy:
+	@echo "$(COLOR_BOLD)Deploying and cleaning orphaned files$(COLOR_RESET)"
+	@$(PYTHON) $(DEPLOY_SCRIPT) --clean $(if $(CONFIG),--config $(CONFIG)) $(if $(DRIVE),--drive $(DRIVE))
+
+.PHONY: validate
+validate:
+	@echo "$(COLOR_CYAN)Validating deployment...$(COLOR_RESET)"
+	@$(PYTHON) -c "from $(DEPLOY_SCRIPT:.py=) import *; \
+		config = DeploymentConfig('$(DEPLOY_CONFIG)'); \
+		deployer = Deployer(config); \
+		deployer.validate_deployment()"
+
+.PHONY: backup
+backup:
+	@echo "$(COLOR_CYAN)Creating backup...$(COLOR_RESET)"
+	@$(PYTHON) -c "from $(DEPLOY_SCRIPT:.py=) import *; \
+		config = DeploymentConfig('$(DEPLOY_CONFIG)'); \
+		deployer = Deployer(config); \
+		deployer.create_backup()"
+
+.PHONY: list-backups
+list-backups:
+	@echo "$(COLOR_CYAN)Available backups:$(COLOR_RESET)"
+	@ls -lh backups/ 2>/dev/null || echo "No backups found"
 
 .PHONY: check
 check:
-	@echo "Checking for CIRCUITPY drive..."
-	@if [ -z "$(DRIVE)" ]; then \
-		echo "$(COLOR_YELLOW)✗ CIRCUITPY drive not found$(COLOR_RESET)"; \
-		echo "  Please mount your Pico and try again"; \
-		exit 1; \
-	else \
-		echo "$(COLOR_GREEN)✓ Found: $(DRIVE)$(COLOR_RESET)"; \
-		if [ -f "$(DRIVE)/boot_out.txt" ]; then \
-			head -1 "$(DRIVE)/boot_out.txt"; \
-		fi; \
-	fi
+	@echo "$(COLOR_CYAN)Checking for CIRCUITPY drive...$(COLOR_RESET)"
+	@$(PYTHON) -c "from $(DEPLOY_SCRIPT:.py=) import *; \
+		config = DeploymentConfig('$(DEPLOY_CONFIG)'); \
+		try: \
+			deployer = Deployer(config); \
+			print('$(COLOR_GREEN)✓ Found:', deployer.drive.path, '$(COLOR_RESET)'); \
+			print('  Free space:', deployer.drive.get_free_space(), 'bytes'); \
+		except SystemExit: \
+			pass"
 
-.PHONY: deploy
-deploy: check
-	@echo "$(COLOR_BOLD)Deploying OpenPonyLogger to $(DRIVE)$(COLOR_RESET)"
-	$(PYTHON) $(DEPLOY_SCRIPT) --drive $(DRIVE)
+.PHONY: edit-config
+edit-config:
+	@$${EDITOR:-nano} $(DEPLOY_CONFIG)
 
-.PHONY: clean-deploy
-clean-deploy: check
-	@echo "$(COLOR_BOLD)Clean deployment to $(DRIVE)$(COLOR_RESET)"
-	$(PYTHON) $(DEPLOY_SCRIPT) --drive $(DRIVE) --clean
+.PHONY: show-config
+show-config:
+	@echo "$(COLOR_CYAN)Current deployment configuration:$(COLOR_RESET)"
+	@cat $(DEPLOY_CONFIG)
 
 .PHONY: install-deps
-install-deps: check
-	@echo "$(COLOR_BOLD)Installing CircuitPython libraries$(COLOR_RESET)"
-	@if ! command -v circup &> /dev/null; then \
-		echo "$(COLOR_RED)✗ circup not found!$(COLOR_RESET)"; \
-		echo "  Install with: pip install circup"; \
-		exit 1; \
-	fi
-	@echo "Installing libraries from circuitpython/requirements.txt..."
-	@cd circuitpython && circup install -r requirements.txt --path $(DRIVE)
-	@echo "$(COLOR_GREEN)✓ Libraries installed$(COLOR_RESET)"
-
-.PHONY: reset-pico
-reset-pico: check
-	@echo "$(COLOR_RED)$(COLOR_BOLD)WARNING: This will ERASE ALL DATA on the Pico!$(COLOR_RESET)"
-	@echo "$(COLOR_YELLOW)This includes:"
-	@echo "  - All Python files (code.py, logger.py, etc.)"
-	@echo "  - All libraries (/lib directory)"
-	@echo "  - All settings (settings.toml, boot.py)"
-	@echo "  - All user data$(COLOR_RESET)"
-	@echo ""
-	@read -p "Type 'RESET' to confirm: " confirm; \
-	if [ "$$confirm" != "RESET" ]; then \
-		echo "$(COLOR_YELLOW)Reset cancelled$(COLOR_RESET)"; \
-		exit 1; \
-	fi
-	@echo ""
-	@echo "Creating reset script..."
-	@echo "import storage" > $(DRIVE)/code.py
-	@echo "import os" >> $(DRIVE)/code.py
-	@echo "print('Resetting filesystem...')" >> $(DRIVE)/code.py
-	@echo "storage.erase_filesystem()" >> $(DRIVE)/code.py
-	@echo "$(COLOR_GREEN)✓ Reset script deployed$(COLOR_RESET)"
-	@echo ""
-	@echo "$(COLOR_YELLOW)Please eject and reset your Pico now.$(COLOR_RESET)"
-	@echo "The Pico will:"
-	@echo "  1. Boot and run the reset script"
-	@echo "  2. Erase the filesystem"
-	@echo "  3. Reboot with a clean filesystem"
-	@echo ""
-	@echo "After reset, run: make install-deps && make deploy"
-
-.PHONY: backup
-backup: check
-	@echo "Backing up Pico files..."
-	@mkdir -p backups
-	@BACKUP_DIR="backups/backup_$$(date +%Y%m%d_%H%M%S)"; \
-	mkdir -p "$$BACKUP_DIR"; \
-	cp -r "$(DRIVE)"/* "$$BACKUP_DIR/" 2>/dev/null || true; \
-	echo "$(COLOR_GREEN)✓ Backup saved to $$BACKUP_DIR$(COLOR_RESET)"
-
-.PHONY: diff
-diff: check
-	@echo "$(COLOR_CYAN)Checking for differences...$(COLOR_RESET)"
-	@echo ""
-	@MODULES="code.py accelerometer.py config.py gps.py hardware_setup.py neopixel_handler.py oled.py rtc_handler.py sdcard.py serial_com.py utils.py"; \
-	CHANGED=0; \
-	MISSING=0; \
-	IDENTICAL=0; \
-	for f in $$MODULES; do \
-		SRC="circuitpython/$$f"; \
-		DST="$(DRIVE)/$$f"; \
-		if [ ! -f "$$SRC" ]; then \
-			continue; \
-		fi; \
-		if [ ! -f "$$DST" ]; then \
-			echo "$(COLOR_GREEN)+ $$f (new file)$(COLOR_RESET)"; \
-			MISSING=$$((MISSING + 1)); \
-		elif ! cmp -s "$$SRC" "$$DST"; then \
-			echo "$(COLOR_YELLOW)M $$f (modified)$(COLOR_RESET)"; \
-			CHANGED=$$((CHANGED + 1)); \
-		else \
-			echo "$(COLOR_CYAN)= $$f (unchanged)$(COLOR_RESET)"; \
-			IDENTICAL=$$((IDENTICAL + 1)); \
-		fi; \
-	done; \
-	echo ""; \
-	echo "Summary: $(COLOR_GREEN)$$MISSING new$(COLOR_RESET), $(COLOR_YELLOW)$$CHANGED modified$(COLOR_RESET), $(COLOR_CYAN)$$IDENTICAL unchanged$(COLOR_RESET)"; \
-	if [ $$MISSING -eq 0 ] && [ $$CHANGED -eq 0 ]; then \
-		echo "$(COLOR_GREEN)✓ Everything is up to date!$(COLOR_RESET)"; \
+install-deps:
+	@echo "$(COLOR_CYAN)Installing CircuitPython libraries with circup...$(COLOR_RESET)"
+	@if command -v circup >/dev/null 2>&1; then \
+		$(PYTHON) -c "from $(DEPLOY_SCRIPT:.py=) import *; \
+			config = DeploymentConfig('$(DEPLOY_CONFIG)'); \
+			deployer = Deployer(config); \
+			libs = config.get('circup.requirements', []); \
+			import subprocess; \
+			for lib in libs: \
+				print(f'Installing {lib}...'); \
+				subprocess.run(['circup', 'install', '--path', str(deployer.drive.path), lib])"; \
 	else \
-		echo "$(COLOR_YELLOW)→ Run 'make deploy' to update$(COLOR_RESET)"; \
+		echo "$(COLOR_YELLOW)circup not installed$(COLOR_RESET)"; \
+		echo "Install with: pip install circup"; \
 	fi
-
-.PHONY: validate
-validate: check
-	@echo "Validating deployment..."
-	@VALID=0; \
-	REQUIRED="code.py hardware_setup.py utils.py"; \
-	OPTIONAL="accelerometer.py config.py gps.py neopixel_handler.py oled.py rtc_handler.py sdcard.py serial_com.py"; \
-	LIBS="lib/adafruit_lis3dh.mpy lib/adafruit_gps.mpy lib/adafruit_displayio_ssd1306.mpy lib/adafruit_display_text lib/adafruit_bitmap_font lib/neopixel.mpy"; \
-	echo "$(COLOR_CYAN)Required modules:$(COLOR_RESET)"; \
-	for f in $$REQUIRED; do \
-		if [ -f "$(DRIVE)/$$f" ]; then \
-			SIZE=$$(stat -f%z "$(DRIVE)/$$f" 2>/dev/null || stat -c%s "$(DRIVE)/$$f" 2>/dev/null); \
-			echo "$(COLOR_GREEN)✓ $$f ($$SIZE bytes)$(COLOR_RESET)"; \
-		else \
-			echo "$(COLOR_RED)✗ Missing: $$f$(COLOR_RESET)"; \
-			VALID=1; \
-		fi; \
-	done; \
-	echo "$(COLOR_CYAN)Optional modules:$(COLOR_RESET)"; \
-	for f in $$OPTIONAL; do \
-		if [ -f "$(DRIVE)/$$f" ]; then \
-			SIZE=$$(stat -f%z "$(DRIVE)/$$f" 2>/dev/null || stat -c%s "$(DRIVE)/$$f" 2>/dev/null); \
-			echo "$(COLOR_GREEN)✓ $$f ($$SIZE bytes)$(COLOR_RESET)"; \
-		else \
-			echo "$(COLOR_YELLOW)○ Not found: $$f$(COLOR_RESET)"; \
-		fi; \
-	done; \
-	echo "$(COLOR_CYAN)Libraries:$(COLOR_RESET)"; \
-	for f in $$LIBS; do \
-		if [ -f "$(DRIVE)/$$f" ]; then \
-			SIZE=$$(stat -f%z "$(DRIVE)/$$f" 2>/dev/null || stat -c%s "$(DRIVE)/$$f" 2>/dev/null); \
-			echo "$(COLOR_GREEN)✓ $$f ($$SIZE bytes)$(COLOR_RESET)"; \
-		else \
-			echo "$(COLOR_YELLOW)○ Not found: $$f$(COLOR_RESET)"; \
-		fi; \
-	done; \
-	if [ $$VALID -eq 0 ]; then \
-		echo "$(COLOR_GREEN)✓ All required modules present$(COLOR_RESET)"; \
-	else \
-		echo "$(COLOR_RED)✗ Missing required modules$(COLOR_RESET)"; \
-	fi; \
-	exit $$VALID
 
 .PHONY: serial
 serial:
 	@echo "$(COLOR_CYAN)Connecting to serial console...$(COLOR_RESET)"
 	@echo "Press Ctrl+A then K to exit"
 	@sleep 1
-	@# Try common serial port locations
 	@if [ "$$(uname)" = "Darwin" ]; then \
 		PORT=$$(ls /dev/tty.usbmodem* 2>/dev/null | head -1); \
 		if [ -n "$$PORT" ]; then \
@@ -225,33 +150,19 @@ serial:
 		fi; \
 	fi
 
-.PHONY: watch
-watch:
-	@echo "$(COLOR_CYAN)Watching for file changes...$(COLOR_RESET)"
-	@echo "Press Ctrl+C to stop"
-	@while true; do \
-		fswatch -1 circuitpython/*.py 2>/dev/null && make deploy; \
-		inotifywait -e modify circuitpython/*.py 2>/dev/null && make deploy; \
-		sleep 1; \
-	done
+.PHONY: install-tools
+install-tools:
+	@echo "$(COLOR_CYAN)Installing deployment tools...$(COLOR_RESET)"
+	@pip install toml circup mpy-cross
+	@echo "$(COLOR_GREEN)✓ Tools installed$(COLOR_RESET)"
 
 .PHONY: clean
 clean:
-	@echo "Cleaning temporary files..."
-	@find . -name "*.pyc" -delete
-	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+	@echo "$(COLOR_CYAN)Cleaning temporary files...$(COLOR_RESET)"
+	@rm -rf web_compressed/
+	@rm -f *.pyc
+	@rm -rf __pycache__
 	@echo "$(COLOR_GREEN)✓ Cleaned$(COLOR_RESET)"
-
-.PHONY: install-tools
-install-tools:
-	@echo "Installing deployment tools..."
-	@echo ""
-	@echo "$(COLOR_CYAN)Installing circup (CircuitPython library manager)$(COLOR_RESET)"
-	pip install --upgrade circup
-	@echo ""
-	@echo "$(COLOR_GREEN)✓ Tools installed$(COLOR_RESET)"
-	@echo ""
-	@echo "Usage: make install-deps"
 
 # Default target
 .DEFAULT_GOAL := help

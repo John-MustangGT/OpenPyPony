@@ -1,0 +1,172 @@
+# OpenPonyLogger Deployment Configuration
+# This file defines what gets deployed to the Pico and where
+
+# =============================================================================
+# Deployment Targets
+# =============================================================================
+[targets]
+# Auto-detect CIRCUITPY drive (tries common locations)
+auto_detect = true
+
+# Manual mount points (used if auto_detect fails or is disabled)
+# Uncomment the line for your OS
+# macos = "/Volumes/CIRCUITPY"
+# linux = "/media/CIRCUITPY"
+# windows = "D:/CIRCUITPY"
+
+# =============================================================================
+# Source Files - What to Deploy
+# =============================================================================
+
+# Main application code
+[files.core]
+source_dir = "refactored_core"
+files = [
+    "code.py",
+    "config.py",
+    "hardware.py",
+    "sensors.py",
+    "session.py",
+    "logger.py",
+]
+destination = "/"
+
+# Configuration files
+[files.config]
+source_dir = "."
+files = [
+    "settings.toml",
+]
+destination = "/"
+optional = true  # Don't fail if settings.toml doesn't exist (use example)
+
+# Web interface files
+[files.web]
+source_dir = "web"
+files = [
+    "index.html.gz",
+    "styles.css.gz",
+    "app.js.gz",
+    "asset_map.py",
+]
+destination = "/web"
+optional = true  # Web interface is optional
+
+# Library directory (copy entire directory)
+[files.lib]
+source_dir = "lib"
+destination = "/lib"
+copy_tree = true  # Copy entire directory structure
+optional = false
+
+# =============================================================================
+# Deployment Options
+# =============================================================================
+[options]
+# Create backup before deployment
+backup = true
+backup_dir = "backups"
+
+# Verify files after copying
+verify = true
+
+# Compile .py to .mpy (requires mpy-cross)
+use_mpy = false
+
+# Clean orphaned files (files on Pico not in deployment config)
+warn_orphans = true
+delete_orphans = false  # Set to true to auto-delete (dangerous!)
+
+# Exclude patterns (won't be copied even if in source)
+exclude = [
+    "*.pyc",
+    "__pycache__",
+    ".DS_Store",
+    "*.backup",
+    ".git",
+    "*.example",
+]
+
+# =============================================================================
+# Validation
+# =============================================================================
+[validation]
+# Required files that must exist after deployment
+required = [
+    "code.py",
+    "config.py",
+    "hardware.py",
+    "sensors.py",
+    "settings.toml",
+]
+
+# Required libraries (in lib/)
+required_libs = [
+    "adafruit_lis3dh.mpy",
+    "adafruit_gps.mpy",
+    "adafruit_pcf8523.mpy",
+    "adafruit_displayio_ssd1306.mpy",
+    "adafruit_display_text",
+]
+
+# Minimum free space (bytes) - warn if below this
+min_free_space = 1048576  # 1MB
+
+# =============================================================================
+# CircuitPython Libraries
+# =============================================================================
+[circup]
+# Install/update libraries using circup
+enabled = true
+
+# Required libraries (circup will install these)
+requirements = [
+    "adafruit_lis3dh",
+    "adafruit_gps",
+    "adafruit_pcf8523",
+    "adafruit_displayio_ssd1306",
+    "adafruit_display_text",
+]
+
+# =============================================================================
+# Pre/Post Deployment Actions
+# =============================================================================
+[actions]
+# Compress web assets before deployment
+pre_deploy = [
+    "python3 tools/prepare_web_assets_cp.py web/ web_compressed/",
+]
+
+# Post-deployment actions
+post_deploy = [
+    # Could add: "python3 tools/verify_deployment.py"
+]
+
+# =============================================================================
+# Platform-Specific Settings
+# =============================================================================
+[platform.macos]
+mount_points = [
+    "/Volumes/CIRCUITPY",
+    "/Volumes/PICO",
+]
+serial_pattern = "/dev/tty.usbmodem*"
+
+[platform.linux]
+mount_points = [
+    "/media/CIRCUITPY",
+    "/media/$USER/CIRCUITPY",
+    "/run/media/$USER/CIRCUITPY",
+    "/mnt/CIRCUITPY",
+]
+serial_pattern = "/dev/ttyACM*"
+
+[platform.windows]
+mount_points = [
+    "D:/CIRCUITPY",
+    "E:/CIRCUITPY",
+    "F:/CIRCUITPY",
+    "G:/CIRCUITPY",
+    "H:/CIRCUITPY",
+]
+serial_pattern = "COM*"

@@ -1,175 +1,171 @@
 """
-main.py - OpenPonyLogger Pico Firmware v2.1 (Refactored)
+OpenPonyLogger - Main Entry Point (Refactored)
+
+Clean, object-oriented architecture with proper HAL.
 """
 
 import time
-import json
-import hardware_setup as hw
-from config import config
-from accelerometer import Accelerometer
-from gps import GPS
-from rtc_handler import RTCHandler
-#from sdcard import FileManager
-from session_logger import SessionLogger
-from oled import OLED
-from serial_com import JSONProtocol
-from neopixel_handler import NeoPixelHandler
-from microcontroller import watchdog
-from watchdog import WatchDogMode
-from debug import OpenPonyDebug
+from config import Config
+from hardware import HardwareAbstractionLayer
+from session import SessionManager
 
-def main():
-    # Initialize components
-    accel = Accelerometer(hw.lis3dh)
-    gps = GPS(hw.gps)
-    rtc = RTCHandler(
-        config.get_int("TIMEZONE_OFFSET", -5), 
-        config.get_bool("TIMEZONE_AUTO_DST", True)
-    )
-    session = SessionLogger("/sd")
-    oled = OLED(hw.display)
-    protocol = JSONProtocol(hw.esp_uart, session, gps)
-    neopixel = NeoPixelHandler(hw.pixel)
+# Version information
+VERSION = "2.0.0-alpha"
+BUILD_DATE = "2024-12-27"
 
-    # Startup sequence
-    neopixel.christmas_tree()
-    oled.show_splash("Booting hardware...")
-    time.sleep(config.get_float("SPLASH_DURATION", 1.5))
-    oled.setup_main_display()
+print("\n" + "="*60)
+print(f"OpenPonyLogger v{VERSION}")
+print(f"Build: {BUILD_DATE}")
+print("="*60)
+
+# =============================================================================
+# Step 1: Load Configuration
+# =============================================================================
+print("\n[Boot] Loading configuration...")
+config = Config('settings.toml')
+config.dump()
+
+# =============================================================================
+# Step 2: Initialize Hardware
+# =============================================================================
+print("\n[Boot] Initializing hardware...")
+hal = HardwareAbstractionLayer(config)
+
+# =============================================================================
+# Step 3: Time Synchronization (RTC -> GPS)
+# =============================================================================
+print("\n[Boot] Synchronizing time...")
+
+rtc = hal.get_rtc()
+gps = hal.get_gps()
+
+if rtc:
+    current_time = rtc.get_time()
+    print(f"[RTC] Current time: {current_time}")
+else:
+    print("[RTC] Not available")
+
+# TODO: Wait for GPS fix and sync RTC
+# For now, just check GPS status
+if hal.has_gps():
+    print("[GPS] Waiting for fix...")
+    # In production, we'd wait here for GPS fix and update RTC
+    # For now, just show status
+    timeout = 10  # seconds
+    start = time.monotonic()
     
-    oled.set_splash_status("Starting session...")
-    time.sleep(0.5)
-
-    # Auto-start logging
-    session_name = config.get("SESSION_NAME", "Track Day!")
-    driver_name = config.get("DRIVER_NAME", "John")
-    vehicle_id = config.get("VEHICLE_ID", "1ZVBP8AM5E5123456")
-    session.start_session(
-	session_name=session_name,
-	driver_name=driver_name, 
-	vehicle_id=vehicle_id
-    )
-
-    print("\n" + "="*50)
-    print("OpenPonyLogger v2.1 Running")
-    print("="*50)
-
-    last_rtc_update = 0
-    last_display_update = 0
-    last_telemetry_send = 0
-    last_satellite_send = 0
-    last_satellite_log = 0
-    last_neopixel_update = 0
-    heartbeat_last_toggle = 0
-    last_status_print = 0
-
-    serial_debug = config.get_bool("SERIAL_DEBUG", True)
-    status_interval_ms = config.get_int("STATUS_INTERVAL", 5000)
-
-    DEBUG = OpenPonyDebug()
-
-    try:
-        while True:
-            watchdog.feed()
-            # Process serial commands
-            protocol.process()
+    while time.monotonic() - start < timeout:
+        if gps.update() and gps.has_fix():
+            print(f"[GPS] Fix acquired! Satellites: {gps.get_satellites()}")
+            gps_time = gps.get_time()
+            print(f"[GPS] Time: {gps_time}")
             
-            # Update and read sensors
-            gps.update()
-            
-            sensor_data = {
-                "t": rtc.get_log_timestamp(),
-                "rtc_synced": rtc.synced,
-                "g": accel.read(),
-                "gps": gps.read()
-            }
- 
-            # get the current system time
-            now = time.monotonic()
-            
-            # Log to SD card
-            if session.active:
-                session.write_accelerometer(
-                    sensor_data["g"]["x"], 
-                    sensor_data["g"]["y"], 
-                    sensor_data["g"]["z"], 
-                    sensor_data["t"]
-                )
-                session.write_gps(
-                    sensor_data["gps"]["lat"], 
-                    sensor_data["gps"]["lon"], 
-                    sensor_data["gps"]["alt"], 
-                    sensor_data["gps"]["speed"], 
-                    sensor_data["gps"]["heading"], 
-                    sensor_data["gps"]["hdop"], 
-                    sensor_data["t"]
-                )
-                # Log satellite data every 5 minutes (300 seconds)
-                if hw.gps.has_fix and now - last_satellite_log >= 300.0:
-                    last_satellite_log = now
-                    sat_data = gps.get_satellites_json()
-                    if sat_data and sat_data.get('satellites'):
-                        session.write_gps_satellites(
-                            sat_data['satellites'],
-                            sensor_data["t"]
-                        )
-                        if serial_debug:
-                            print(f"[Log] Satellites logged: {sat_data['count']} sats")
+            # Sync RTC with GPS time
+            if rtc and gps_time:
+                rtc.set_time(gps_time)
+                print("[RTC] Synchronized with GPS")
+            break
+        time.sleep(0.1)
+    else:
+        print("[GPS] No fix within timeout (continuing anyway)")
+else:
+    print("[GPS] Not available")
 
-            # Update heartbeat LED (1Hz; on for normal=800ms, error=200ms)
-            if now - heartbeat_last_toggle >= 1.0:
-                hw.heartbeat.value = True
-                heartbeat_last_toggle = now
-            elif hw.gps.has_fix and now - heartbeat_last_toggle >= 0.9:
-                hw.heartbeat.value = False
-            elif not hw.gps.has_fix and now - heartbeat_last_toggle >= 0.1:
-                hw.heartbeat.value = False
+# =============================================================================
+# Step 4: Session Management
+# =============================================================================
+print("\n[Boot] Setting up session...")
 
-            # only sync RTC every minute
-            if hw.gps.has_fix and now - last_rtc_update >= 60.0:
-                last_rtc_update = now
-                rtc.sync_from_gps(gps.gps)
+storage = hal.get_storage()
+if storage:
+    session_mgr = SessionManager(storage, base_path='/sd')
+    session_file = session_mgr.start_new_session()
+    print(f"[Session] File: {session_mgr.get_session_path()}")
+    
+    # List recent sessions
+    recent = session_mgr.list_sessions(limit=5)
+    if recent:
+        print(f"[Session] Recent sessions: {', '.join(recent[:3])}")
+else:
+    print("[Session] ERROR: No storage available!")
+    print("[Session] Cannot proceed without SD card")
+    # In production, we'd halt here or go to error state
+
+# =============================================================================
+# Step 5: Initialize Display (if present)
+# =============================================================================
+display = hal.get_display()
+if hal.has_display():
+    print("[Display] Initializing...")
+    display.clear()
+    display.text("OpenPonyLogger", 0, 0)
+    display.text(f"v{VERSION}", 0, 10)
+    display.text("Ready!", 0, 30)
+    display.show()
+else:
+    print("[Display] Not available (optional)")
+
+# =============================================================================
+# Step 6: Main Loop (Placeholder)
+# =============================================================================
+print("\n" + "="*60)
+print("System Ready - Entering main loop")
+print("Press Ctrl+C to stop")
+print("="*60 + "\n")
+
+# Get sensor interfaces
+accel = hal.get_accelerometer()
+
+# Simple demo loop - just read sensors
+loop_count = 0
+last_display_update = 0
+
+try:
+    while True:
+        current_time = time.monotonic()
+        
+        # Update GPS
+        if gps.update():
+            pos = gps.get_position()
+            speed = gps.get_speed()
             
-            # Update NeoPixels (10Hz)
-            if now - last_neopixel_update > 0.1:
-                last_neopixel_update = now
-                neopixel.update(sensor_data, session)
+            # Read accelerometer
+            gx, gy, gz = accel.get_gforce()
+            
+            # Print status every second
+            if loop_count % 10 == 0:
+                print(f"[{int(current_time)}s] GPS: {pos[0]:.6f}, {pos[1]:.6f} | "
+                      f"Speed: {speed:.1f} m/s | G: {gx:+.2f}, {gy:+.2f}, {gz:+.2f}")
             
             # Update display (5Hz)
-            if now - last_display_update > 0.2:
-                last_display_update = now
-                oled.update(sensor_data, session, rtc)
+            if hal.has_display() and (current_time - last_display_update) >= 0.2:
+                display.clear()
+                display.text("OpenPonyLogger", 0, 0)
+                display.text(f"Sats: {gps.get_satellites()}", 0, 12)
+                display.text(f"Speed: {speed:.1f} m/s", 0, 24)
+                display.text(f"G: {gx:+.1f} {gy:+.1f} {gz:+.1f}", 0, 36)
+                display.show()
+                last_display_update = current_time
             
-            # Send telemetry (1Hz)
-            if serial_debug and now - last_telemetry_send > 1.0:
-                last_telemetry_send = now
-                if hw.gps.timestamp_utc:
-                    def _format_datetime(datetime):
-                        date_part = f"{datetime.tm_mon:02}/{datetime.tm_mday:02}/{datetime.tm_year}"
-                        time_part = f"{datetime.tm_hour:02}:{datetime.tm_min:02}:{datetime.tm_sec:02}"
-                        return f"{date_part} {time_part}"
-                    print(f"Fix timestamp: {_format_datetime(hw.gps.timestamp_utc)}")
-                else:
-                    print(f"No GPS Time")
-                DEBUG.debug_message(f"{json.dumps(sensor_data)}")
-                protocol.send_telemetry(sensor_data)
-            
-            # Send satellites (every 5s)
-            if serial_debug and now - last_satellite_send > 5.0:
-                last_satellite_send = now
-                print(f"{gps.get_satellites_json()}")
-                protocol.send_satellites()
+            # TODO: Log data to session file
+            # logger.log_frame(gps_data, accel_data, timestamp)
+        
+        loop_count += 1
+        time.sleep(0.1)  # 10Hz main loop
 
-            if serial_debug and (now * 1000) - last_status_print > status_interval_ms:
-                last_status_print = now * 1000
-                print(f"Status: {sensor_data}")
-            
-            time.sleep(0.01)  # 100Hz main loop
-            
-    except KeyboardInterrupt:
-        print("\nStopping...")
-        if session.active:
-            session.stop()
-
-if __name__ == "__main__":
-    main()
+except KeyboardInterrupt:
+    print("\n\n" + "="*60)
+    print("Shutdown requested")
+    print("="*60)
+    
+    # TODO: Cleanup
+    # - Flush logger buffers
+    # - Close session file
+    # - Save any pending data
+    
+    if hal.has_display():
+        display.clear()
+        display.text("Shutdown", 0, 0)
+        display.show()
+    
+    print("\n✓ Shutdown complete")

@@ -1,98 +1,256 @@
 """
-config.py - Configuration management for OpenPonyLogger
+config.py - Configuration Manager for OpenPonyLogger
 
-Handles loading settings from settings.toml and environment variables
+Handles TOML parsing, profile switching, and configuration access.
 """
 
 import os
 
+
 class Config:
-    """Configuration settings"""
+    """
+    Configuration manager with profile support
     
-    def __init__(self):
-        # Logging format
-        self.log_format = self._get('LOG_FORMAT', 'binary').lower()  # 'binary' or 'csv'
-        
-        # Session metadata
-        self.session_name = self._get('SESSION_NAME', 'Track Day')
-        self.driver_name = self._get('DRIVER_NAME', 'Unknown')
-        self.vehicle_id = self._get('VEHICLE_ID', 'Unknown')
-        
-        # Sample rates
-        self.accel_sample_rate = self.get_int('ACCEL_SAMPLE_RATE', 100)  # Hz
-        self.gps_update_rate = self.get_int('GPS_UPDATE_RATE', 1000)  # ms
-        
-        # Thresholds
-        self.gforce_event_threshold = self.get_float('GFORCE_EVENT_THRESHOLD', 3.0)
-        
-        # Display
-        self.splash_duration = self.get_float('SPLASH_DURATION', 2.0)  # seconds
-        self.oled_brightness = self.get_int('OLED_BRIGHTNESS', 255)
-        
-        # NeoPixel
-        self.neopixel_brightness = self.get_float('NEOPIXEL_BRIGHTNESS', 0.3)
-        self.neopixel_enabled = self.get_bool('NEOPIXEL_ENABLED', True)
-        
-        # WiFi
-        self.wifi_ssid = self._get('WIFI_SSID', 'OpenPonyLogger')
-        self.wifi_password = self._get('WIFI_PASSWORD', 'mustanggt')
-        self.wifi_enabled = self.get_bool('WIFI_ENABLED', True)
-        
-        # Debug
-        self.serial_debug = self.get_bool('SERIAL_DEBUG', True)
-        
-        # Storage
-        self.sd_path = '/sd'
-        
-    def _get(self, key, default=''):
-        """Get config value from environment or return default"""
-        return os.getenv(key, default)
+    Parses settings.toml and provides typed access to configuration values.
+    Supports profile switching (e.g., daily -> track mode).
+    """
     
-    def get(self, key, default=''):
-        """Get config value (public method)"""
-        return self._get(key, default)
+    def __init__(self, path='settings.toml'):
+        """
+        Initialize configuration
+        
+        Args:
+            path: Path to settings.toml file
+        """
+        self.path = path
+        self.config = {}
+        self.active_profile = None
+        self._load()
     
-    def get_int(self, key, default=0):
-        """Get config value as integer"""
+    def _load(self):
+        """Load and parse TOML configuration"""
+        if not self._file_exists(self.path):
+            print(f"[Config] Warning: {self.path} not found, using defaults")
+            self._set_defaults()
+            return
+        
         try:
-            return int(self._get(key, str(default)))
-        except (ValueError, TypeError):
-            return default
+            # CircuitPython doesn't have a built-in TOML parser
+            # We'll implement a simple one for our needs
+            self.config = self._parse_toml(self.path)
+            
+            # Determine active profile
+            startup_profile = self.get('general.StartUp_Config', 'general.daily')
+            if '.' in startup_profile:
+                self.active_profile = startup_profile
+            else:
+                self.active_profile = f'general.{startup_profile}'
+            
+            print(f"[Config] Loaded from {self.path}")
+            print(f"[Config] Active profile: {self.active_profile}")
+            
+        except Exception as e:
+            print(f"[Config] Error loading {self.path}: {e}")
+            self._set_defaults()
     
-    def get_float(self, key, default=0.0):
-        """Get config value as float"""
+    def _file_exists(self, path):
+        """Check if file exists"""
         try:
-            return float(self._get(key, str(default)))
-        except (ValueError, TypeError):
-            return default
+            os.stat(path)
+            return True
+        except OSError:
+            return False
     
-    def get_bool(self, key, default=False):
-        """Get config value as boolean"""
-        value = self._get(key, str(default)).lower()
-        return value in ('true', '1', 'yes', 'on')
+    def _parse_toml(self, path):
+        """
+        Simple TOML parser for CircuitPython
+        
+        Supports:
+        - Sections: [section.subsection]
+        - Key-value pairs: key = value
+        - Strings, numbers, booleans
+        - Comments with #
+        """
+        config = {}
+        current_section = None
+        
+        with open(path, 'r') as f:
+            for line in f:
+                line = line.strip()
+                
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+                
+                # Section header
+                if line.startswith('[') and line.endswith(']'):
+                    current_section = line[1:-1].strip()
+                    continue
+                
+                # Key-value pair
+                if '=' in line:
+                    key, value = line.split('=', 1)
+                    key = key.strip()
+                    value = value.strip()
+                    
+                    # Remove inline comments
+                    if '#' in value:
+                        value = value.split('#')[0].strip()
+                    
+                    # Parse value
+                    parsed_value = self._parse_value(value)
+                    
+                    # Store in config dict
+                    if current_section:
+                        full_key = f"{current_section}.{key}"
+                    else:
+                        full_key = key
+                    
+                    config[full_key] = parsed_value
+        
+        return config
     
-    def to_dict(self):
-        """Convert config to dictionary"""
-        return {
-            'log_format': self.log_format,
-            'session_name': self.session_name,
-            'driver_name': self.driver_name,
-            'vehicle_id': self.vehicle_id,
-            'accel_sample_rate': self.accel_sample_rate,
-            'gps_update_rate': self.gps_update_rate,
-            'gforce_event_threshold': self.gforce_event_threshold,
-            'splash_duration': self.splash_duration,
-            'oled_brightness': self.oled_brightness,
-            'neopixel_brightness': self.neopixel_brightness,
-            'neopixel_enabled': self.neopixel_enabled,
-            'wifi_ssid': self.wifi_ssid,
-            'wifi_enabled': self.wifi_enabled,
-            'serial_debug': self.serial_debug,
+    def _parse_value(self, value):
+        """Parse TOML value to Python type"""
+        # Remove quotes from strings
+        if (value.startswith('"') and value.endswith('"')) or \
+           (value.startswith("'") and value.endswith("'")):
+            return value[1:-1]
+        
+        # Boolean
+        if value.lower() == 'true':
+            return True
+        if value.lower() == 'false':
+            return False
+        
+        # Hex number
+        if value.startswith('0x') or value.startswith('0X'):
+            return int(value, 16)
+        
+        # Try integer
+        try:
+            return int(value)
+        except ValueError:
+            pass
+        
+        # Try float
+        try:
+            return float(value)
+        except ValueError:
+            pass
+        
+        # Return as string
+        return value
+    
+    def _set_defaults(self):
+        """Set default configuration"""
+        self.config = {
+            'general.Driver_name': 'Driver',
+            'general.Vehicle_id': 'Vehicle',
+            'general.NEOPIXEL_ENABLED': False,
+            'general.daily.GPS_Update_rate': 1000,
+            'general.daily.Accel_sample_rate': 100,
+            'general.daily.Gforce_Event_threshold': 2.5,
+            'hardware.name': 'OpenPonyLogger',
+            'sensors.accelerometer.enabled': True,
+            'sensors.accelerometer.type': 'LIS3DH',
+            'sensors.accelerometer.address': 0x18,
+            'gps.enabled': True,
+            'gps.type': 'ATGM336H',
+            'radio.mode': 'ap',
+            'radio.ssid': 'OpenPonyLogger',
+            'radio.password': 'mustanggt',
         }
+        self.active_profile = 'general.daily'
     
-    def __repr__(self):
-        return f"Config(log_format={self.log_format}, driver={self.driver_name}, vehicle={self.vehicle_id})"
-
-
-# Global config instance
-config = Config()
+    def get(self, key, default=None):
+        """
+        Get configuration value
+        
+        Args:
+            key: Configuration key (dot-separated for nested values)
+            default: Default value if key not found
+            
+        Returns:
+            Configuration value or default
+        """
+        # Check if key exists directly
+        if key in self.config:
+            return self.config[key]
+        
+        # Check in active profile
+        if self.active_profile:
+            profile_key = f"{self.active_profile}.{key}"
+            if profile_key in self.config:
+                return self.config[profile_key]
+        
+        return default
+    
+    def get_section(self, section):
+        """
+        Get all keys in a section
+        
+        Args:
+            section: Section name (e.g., 'hardware' or 'sensors.accelerometer')
+            
+        Returns:
+            Dictionary of keys in section
+        """
+        result = {}
+        prefix = section + '.'
+        
+        for key, value in self.config.items():
+            if key.startswith(prefix):
+                # Extract the key after the section prefix
+                short_key = key[len(prefix):]
+                # Only include direct children (not nested sections)
+                if '.' not in short_key:
+                    result[short_key] = value
+        
+        return result
+    
+    def switch_profile(self, profile_name):
+        """
+        Switch active profile
+        
+        Args:
+            profile_name: Name of profile (e.g., 'track' or 'general.track')
+        """
+        if '.' not in profile_name:
+            profile_name = f'general.{profile_name}'
+        
+        self.active_profile = profile_name
+        print(f"[Config] Switched to profile: {profile_name}")
+    
+    def save(self):
+        """Save current configuration back to TOML file"""
+        # TODO: Implement TOML writing if needed
+        print("[Config] Warning: save() not yet implemented")
+    
+    def dump(self):
+        """Print all configuration for debugging"""
+        print("\n" + "="*60)
+        print("Configuration Dump")
+        print("="*60)
+        print(f"Active Profile: {self.active_profile}")
+        print("-"*60)
+        
+        # Group by section
+        sections = {}
+        for key, value in sorted(self.config.items()):
+            if '.' in key:
+                section = key.rsplit('.', 1)[0]
+            else:
+                section = 'root'
+            
+            if section not in sections:
+                sections[section] = []
+            sections[section].append((key, value))
+        
+        for section, items in sorted(sections.items()):
+            print(f"\n[{section}]")
+            for key, value in items:
+                short_key = key.split('.')[-1]
+                print(f"  {short_key} = {value!r}")
+        
+        print("="*60 + "\n")

@@ -1,106 +1,86 @@
-# OpenPonyLogger Configuration
-# Copy this file to settings.toml and customize
+# OpenPonyLogger Configuration File
+# Copy to settings.toml and customize
 
 # =============================================================================
-# Logging Configuration
+# General Settings
 # =============================================================================
+[general]
+StartUp_Config = "daily"          # Which profile to use on boot (daily/track)
+Driver_name = "John"               # Driver name for session metadata
+Vehicle_id = "Ciara"               # Vehicle identifier
+NEOPIXEL_ENABLED = false           # Enable NeoPixel Jewel (if installed)
+Neopixel_Brightness = 0.3          # NeoPixel brightness (0.0-1.0)
 
-# Log format: 'binary' or 'csv'
-# Binary format (.opl files):
-#   - Smaller file size (~60% of CSV)
-#   - Session metadata embedded
-#   - Data integrity checksums (SHA-256 or CRC32)
-#   - Event-based flushing
-#   - Requires parser tool to read
-# CSV format (.csv files):
-#   - Human readable
-#   - Easy to import into Excel/analysis tools
-#   - Larger file size
-#   - Simple header row
-LOG_FORMAT = "binary"
+# Daily driving profile (conservative settings)
+[general.daily]
+GPS_Update_rate = 1000             # GPS update rate in ms (1Hz)
+Accel_sample_rate = 100            # Accelerometer sample rate in Hz
+Gforce_Event_threshold = 2.5       # G-force threshold for event marking
 
-# Session metadata (used in binary format)
-SESSION_NAME = "Track Day"
-DRIVER_NAME = "John"
-VEHICLE_ID = "Ciara"
-
-# =============================================================================
-# Sample Rates
-# =============================================================================
-
-# Accelerometer sample rate in Hz (10-100)
-# Higher rates = more data, more power usage
-ACCEL_SAMPLE_RATE = "100"
-
-# GPS update rate in milliseconds (1000-5000)
-# Lower values = more frequent updates, more power
-GPS_UPDATE_RATE = "1000"
+# Track day profile (high-performance settings)
+[general.track]
+GPS_Update_rate = 200              # GPS update rate in ms (5Hz)
+Accel_sample_rate = 200            # Accelerometer sample rate in Hz
+Gforce_Event_threshold = 3.0       # G-force threshold for event marking
+NEOPIXEL_ENABLED = false           # Disable NeoPixel on track (less distraction)
 
 # =============================================================================
-# Event Thresholds
+# Hardware Information
 # =============================================================================
-
-# G-force threshold for event markers (binary format only)
-# When total G-force exceeds this, data is flushed immediately
-# Typical values: 2.5-3.5g
-GFORCE_EVENT_THRESHOLD = "3.0"
-
-# =============================================================================
-# Display Configuration
-# =============================================================================
-
-# Splash screen duration in seconds
-SPLASH_DURATION = "2.0"
-
-# OLED brightness (0-255)
-OLED_BRIGHTNESS = "255"
-
-# NeoPixel brightness (0.0-1.0)
-NEOPIXEL_BRIGHTNESS = "0.3"
-
-# Enable/disable NeoPixel Jewel
-NEOPIXEL_ENABLED = "true"
+[hardware]
+name = "OpenPonyLogger-01"         # Device name
+build_date = "2024-12-27"          # Build date
+hardware_version = "2.0"           # Hardware version
 
 # =============================================================================
-# WiFi Configuration
+# Sensor Configuration
 # =============================================================================
 
-# WiFi Access Point Settings
-WIFI_SSID = "OpenPonyLogger"
-WIFI_PASSWORD = "mustanggt"
-WIFI_ENABLED = "true"
+# Accelerometer settings
+[sensors.accelerometer]
+enabled = true                     # Enable accelerometer
+type = "LIS3DH"                    # Accelerometer type (LIS3DH, LSM6DSOX)
+address = 0x18                     # I2C address (0x18 or 0x19)
+range = 2                          # Range in g (2, 4, 8, 16)
+sample_rate = 100                  # Sample rate in Hz (1, 10, 25, 50, 100, 200, 400)
+
+# GPS settings
+[gps]
+enabled = true                     # Enable GPS
+type = "ATGM336H"                  # GPS module type
+interface = "uart"                 # Interface (uart or i2c)
+update_rate = 1000                 # Update rate in ms (200-10000)
+
+# Sentence configuration for ATGM336H
+# Format: GLL,RMC,VTG,GGA,GSA,GSV,GRS,GST,...
+# 0=disable, 1=enable, 2-5=other rates
+sentences = "0,1,0,1,0,5,0,0,0,0,0,0,0,0,0,0,0,0,0"
 
 # =============================================================================
-# Debug Options
+# Network Configuration (WiFi)
 # =============================================================================
-
-# Enable serial debug output
-SERIAL_DEBUG = "true"
+[radio]
+mode = "ap"                        # Mode: "ap" (access point) or "client"
+ssid = "OpenPonyLogger"            # AP SSID or client network name
+password = "mustanggt"             # WiFi password
+ip = "192.168.4.1/24"              # IP address (AP mode) or static IP
+gw = "192.168.4.1"                 # Gateway (AP mode or static client)
 
 # =============================================================================
-# Preset Configurations (uncomment one to use)
+# Storage Configuration
 # =============================================================================
+[storage]
+log_format = "binary"              # Log format: "binary" (.opl) or "csv"
+buffer_size = 50                   # Number of samples to buffer before flush
+auto_flush_interval = 5000         # Auto-flush interval in ms
+flush_on_gforce = true             # Flush immediately on high G-force events
 
-# Track Day (Maximum Performance):
-#   LOG_FORMAT = "binary"
-#   ACCEL_SAMPLE_RATE = "100"
-#   GPS_UPDATE_RATE = "1000"
-#   GFORCE_EVENT_THRESHOLD = "2.5"
-#   SERIAL_DEBUG = "false"
-#   SPLASH_DURATION = "0"
-
-# Daily Commute (Balanced):
-#   LOG_FORMAT = "csv"
-#   ACCEL_SAMPLE_RATE = "50"
-#   GPS_UPDATE_RATE = "2000"
-#   GFORCE_EVENT_THRESHOLD = "3.0"
-#   SERIAL_DEBUG = "true"
-#   SPLASH_DURATION = "3"
-
-# Extended Recording (Battery Saving):
-#   LOG_FORMAT = "binary"
-#   ACCEL_SAMPLE_RATE = "25"
-#   GPS_UPDATE_RATE = "5000"
-#   GFORCE_EVENT_THRESHOLD = "3.5"
-#   SERIAL_DEBUG = "false"
-#   SPLASH_DURATION = "1"
+# =============================================================================
+# Display Configuration (Optional OLED)
+# =============================================================================
+[display]
+enabled = true                     # Try to use display if detected
+update_rate = 5                    # Display update rate in Hz
+show_gforce = true                 # Show G-force on display
+show_gps = true                    # Show GPS status on display
+show_speed = true                  # Show speed on display

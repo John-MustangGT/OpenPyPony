@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
 """
-deploy_to_pico.py - Deploy OpenPonyLogger to CircuitPython device
+deploy_to_pico.py - OpenPonyLogger Deployment Tool (TOML-based)
 
-This script automates the complete deployment process:
-1. Detects mounted CIRCUITPY drive
-2. Copies logger.py to Pico
-3. Optionally installs dependencies via circup
-4. Validates installation
+Reads deploy.toml for configuration and deploys files to CIRCUITPY drive.
+Handles platform detection, file verification, and orphan warnings.
 
 Usage:
-    python3 deploy_to_pico.py                    # Auto-detect and deploy
+    python3 deploy_to_pico.py                    # Use deploy.toml settings
+    python3 deploy_to_pico.py --config custom.toml
     python3 deploy_to_pico.py --drive /Volumes/CIRCUITPY
-    python3 deploy_to_pico.py --clean            # Clean install
-    python3 deploy_to_pico.py --install-deps     # Install CircuitPython libraries
-    python3 deploy_to_pico.py --reset            # Factory reset Pico
+    python3 deploy_to_pico.py --clean            # Clean orphans
+    python3 deploy_to_pico.py --mpy              # Force .mpy compilation
 """
 
 import os
@@ -22,10 +19,30 @@ import shutil
 import subprocess
 import platform
 import argparse
+import tempfile
 from pathlib import Path
+from datetime import datetime
+
+# Try to use tomllib (Python 3.11+) or fallback to toml
+try:
+    import tomllib
+    def load_toml(path):
+        with open(path, 'rb') as f:
+            return tomllib.load(f)
+except ImportError:
+    try:
+        import toml
+        def load_toml(path):
+            with open(path, 'r') as f:
+                return toml.load(f)
+    except ImportError:
+        print("ERROR: Neither tomllib nor toml module available!")
+        print("Install with: pip install toml")
+        sys.exit(1)
+
 
 class Colors:
-    """ANSI color codes for terminal output"""
+    """ANSI color codes"""
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
     OKCYAN = '\033[96m'
@@ -35,718 +52,544 @@ class Colors:
     ENDC = '\033[0m'
     BOLD = '\033[1m'
 
+
 def print_header(msg):
-    print(f"\n{Colors.HEADER}{Colors.BOLD}{'='*60}{Colors.ENDC}")
+    print(f"\n{Colors.HEADER}{Colors.BOLD}{'='*70}{Colors.ENDC}")
     print(f"{Colors.HEADER}{Colors.BOLD}{msg}{Colors.ENDC}")
-    print(f"{Colors.HEADER}{Colors.BOLD}{'='*60}{Colors.ENDC}\n")
+    print(f"{Colors.HEADER}{Colors.BOLD}{'='*70}{Colors.ENDC}\n")
+
 
 def print_success(msg):
     print(f"{Colors.OKGREEN}✓ {msg}{Colors.ENDC}")
 
+
 def print_warning(msg):
     print(f"{Colors.WARNING}⚠ {msg}{Colors.ENDC}")
+
 
 def print_error(msg):
     print(f"{Colors.FAIL}✗ {msg}{Colors.ENDC}")
 
+
 def print_info(msg):
     print(f"{Colors.OKCYAN}→ {msg}{Colors.ENDC}")
 
-def find_circuitpy_drive():
-    """
-    Auto-detect CIRCUITPY drive across platforms
-    
-    Returns:
-        Path to CIRCUITPY drive or None if not found
-    """
-    system = platform.system()
-    
-    if system == "Darwin":  # macOS
-        possible_paths = [
-            "/Volumes/CIRCUITPY",
-            "/Volumes/PICO",
-        ]
-    elif system == "Linux":
-        possible_paths = [
-            "/media/CIRCUITPY",
-            "/media/$USER/CIRCUITPY",
-            "/run/media/$USER/CIRCUITPY",
-            "/mnt/CIRCUITPY",
-        ]
-        # Expand $USER
-        user = os.environ.get('USER', '')
-        possible_paths = [p.replace('$USER', user) for p in possible_paths]
-    elif system == "Windows":
-        # Check all drive letters
-        possible_paths = [f"{chr(d)}:/CIRCUITPY" for d in range(ord('D'), ord('Z')+1)]
-    else:
-        return None
-    
-    for path in possible_paths:
-        if os.path.isdir(path):
-            # Verify it's actually a CircuitPython device
-            if os.path.exists(os.path.join(path, "boot_out.txt")):
-                return path
-    
-    return None
 
-def check_git_repo():
-    """Verify we're in a git repository"""
-    if not os.path.isdir('.git'):
-        print_error("Not in a git repository!")
-        print_info("Run this script from the OpenPonyLogger root directory")
-        return False
-    return True
-
-def copy_file_with_backup(src, dst, backup=True):
-    """
-    Copy file with optional backup
+class DeploymentConfig:
+    """Deployment configuration from deploy.toml"""
     
-    Args:
-        src: Source file path
-        dst: Destination file path
-        backup: If True, backup existing file
-    """
-    dst_path = Path(dst)
-    
-    # Backup existing file
-    if backup and dst_path.exists():
-        backup_path = dst_path.with_suffix(dst_path.suffix + '.backup')
-        shutil.copy2(dst_path, backup_path)
-        print_info(f"  Backed up {dst_path.name} → {backup_path.name}")
-    
-    # Copy new file
-    shutil.copy2(src, dst)
-    print_info(f"  Copied {Path(src).name} → {dst_path.name}")
-
-def files_differ(src, dst):
-    """
-    Check if two files differ in content
-    
-    Args:
-        src: Source file path
-        dst: Destination file path
-    
-    Returns:
-        True if files differ or dst doesn't exist, False if identical
-    """
-    if not dst.exists():
-        return True
-    
-    # Compare file sizes first (quick check)
-    if src.stat().st_size != dst.stat().st_size:
-        return True
-    
-    # Compare content
-    with open(src, 'rb') as f1, open(dst, 'rb') as f2:
-        return f1.read() != f2.read()
-
-def check_for_unknown_files(drive_path, known_files, src_dir):
-    """
-    Warn about .py files on drive that aren't in our deployment list
-    AND check for .py files in repo that aren't being deployed
-    Helps catch orphaned files from old versions or manual copies
-    
-    Args:
-        drive_path: Path to CIRCUITPY drive
-        known_files: Set of filenames we know about
-        src_dir: Path to circuitpython/ source directory
-    
-    Returns:
-        Tuple of (unknown_on_drive, unknown_in_repo)
-    """
-    print_info("Checking for unknown Python files...")
-    
-    unknown_on_drive = []
-    unknown_in_repo = []
-    
-    # Check 1: Files on drive not in deployment list
-    try:
-        # Get all .py files in root of drive
-        drive_files = set()
-        for item in os.listdir(drive_path):
-            # Ignore macOS metadata files (._*)
-            if item.endswith('.py') and not item.startswith('._') and os.path.isfile(os.path.join(drive_path, item)):
-                drive_files.add(item)
+    def __init__(self, config_path='deploy.toml'):
+        """Load deployment configuration"""
+        self.config_path = config_path
         
-        # Find unknowns (on drive but not in our list)
-        unknown_on_drive = list(drive_files - known_files)
+        if not os.path.exists(config_path):
+            print_error(f"Config file not found: {config_path}")
+            sys.exit(1)
         
-        if unknown_on_drive:
-            print_warning(f"Found {len(unknown_on_drive)} unknown .py file(s) on CIRCUITPY:")
-            for fname in sorted(unknown_on_drive):
-                print(f"  ⚠️  {fname}")
-            print_info("These might be:")
-            print_info("  - Old versions from manual copies")
-            print_info("  - Missing from deployment list")
-            print_info("  - Files from previous firmware")
-            print_info("  - Test scripts you created")
-            print_info("Consider removing them or adding to deployment list.")
-        else:
-            print_success("No unknown Python files found on drive")
-            
-    except Exception as e:
-        print_warning(f"Could not check drive for unknown files: {e}")
+        self.config = load_toml(config_path)
+        print_success(f"Loaded config from {config_path}")
     
-    # Check 2: Files in repo not being deployed
-    print()
-    try:
-        if src_dir.exists():
-            # Get all .py files in source directory
-            repo_files = set()
-            for item in os.listdir(src_dir):
-                if item.endswith('.py') and os.path.isfile(src_dir / item):
-                    repo_files.add(item)
-            
-            # Find files in repo not in deployment list
-            unknown_in_repo = list(repo_files - known_files)
-            
-            if unknown_in_repo:
-                print_warning(f"Found {len(unknown_in_repo)} .py file(s) in circuitpython/ NOT being deployed:")
-                for fname in sorted(unknown_in_repo):
-                    print(f"  ⚠️  {fname}")
-                print_info("These files exist in your repo but won't be deployed.")
-                print_info("If needed, add them to the deployment list in deploy_to_pico.py")
+    def get(self, key, default=None):
+        """Get config value using dot notation"""
+        keys = key.split('.')
+        value = self.config
+        
+        for k in keys:
+            if isinstance(value, dict) and k in value:
+                value = value[k]
             else:
-                print_success("All Python files in repo are being deployed")
+                return default
+        
+        return value
+    
+    def get_file_groups(self):
+        """Get all file groups to deploy"""
+        return self.config.get('files', {})
+    
+    def get_mount_points(self):
+        """Get mount points for current platform"""
+        system = platform.system()
+        
+        if system == 'Darwin':
+            return self.get('platform.macos.mount_points', ['/Volumes/CIRCUITPY'])
+        elif system == 'Linux':
+            # Expand $USER variable
+            points = self.get('platform.linux.mount_points', ['/media/CIRCUITPY'])
+            user = os.environ.get('USER', '')
+            return [p.replace('$USER', user) for p in points]
+        elif system == 'Windows':
+            return self.get('platform.windows.mount_points', ['D:/CIRCUITPY'])
         else:
-            print_warning(f"Source directory not found: {src_dir}")
+            return []
+
+
+class CircuitPyDrive:
+    """Represents a CIRCUITPY drive"""
+    
+    def __init__(self, path):
+        """Initialize drive"""
+        self.path = Path(path)
+        
+        if not self.path.exists():
+            raise FileNotFoundError(f"Drive not found: {path}")
+        
+        # Verify it's a CircuitPython device
+        boot_out = self.path / "boot_out.txt"
+        if not boot_out.exists():
+            raise ValueError(f"Not a CircuitPython drive: {path}")
+        
+        # Read boot info
+        self.boot_info = boot_out.read_text().strip()
+    
+    def get_free_space(self):
+        """Get free space in bytes"""
+        if sys.platform == 'win32':
+            import ctypes
+            free_bytes = ctypes.c_ulonglong(0)
+            ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                str(self.path), None, None, ctypes.pointer(free_bytes)
+            )
+            return free_bytes.value
+        else:
+            stat = os.statvfs(self.path)
+            return stat.f_bavail * stat.f_frsize
+    
+    def list_files(self, relative=True):
+        """
+        List all files on drive
+        
+        Args:
+            relative: Return paths relative to drive root
             
-    except Exception as e:
-        print_warning(f"Could not check repo for undeployed files: {e}")
-    
-    return unknown_on_drive, unknown_in_repo
+        Returns:
+            set: Set of file paths
+        """
+        files = set()
+        
+        for root, dirs, filenames in os.walk(self.path):
+            # Skip hidden directories
+            dirs[:] = [d for d in dirs if not d.startswith('.')]
+            
+            for filename in filenames:
+                # Skip hidden files
+                if filename.startswith('.'):
+                    continue
+                
+                filepath = Path(root) / filename
+                
+                if relative:
+                    files.add(str(filepath.relative_to(self.path)))
+                else:
+                    files.add(str(filepath))
+        
+        return files
 
-def deploy_python_modules(drive_path, backup=True):
-    """
-    Deploy all Python modules from circuitpython/ to CIRCUITPY drive
-    Only copies files that have changed.
+
+class Deployer:
+    """Handles deployment to CircuitPython device"""
     
-    Args:
-        drive_path: Path to CIRCUITPY drive
-        backup: If True, backup existing files
-    
-    Returns:
-        Tuple of (success, files_copied, files_skipped)
-    """
-    print_info("Deploying Python modules...")
-    
-    # List of all Python modules to deploy
-    python_modules = [
-        "code.py",
-        "debug.py",
-        "accelerometer.py",
-        "binary_logger.py",
-        "config.py",
-        "gps.py",
-        "hardware_setup.py",
-        "hardware_config.py",
-        "neopixel_handler.py",
-        "oled.py",
-        "pcf8523_rtc.py",
-        "rtc_handler.py",
-        "sdcard.py",
-        "serial_com.py",
-        "session_logger.py",  # Added!
-        "utils.py",
-    ]
-    
-    # Create set of known files for orphan detection
-    known_files = set(python_modules)
-    
-    src_dir = Path("circuitpython")
-    if not src_dir.exists():
-        print_error(f"Source directory not found: {src_dir}")
-        return False, 0, 0
-    
-    files_copied = 0
-    files_skipped = 0
-    all_success = True
-    
-    for module in python_modules:
-        src = src_dir / module
+    def __init__(self, config, drive_path=None):
+        """
+        Initialize deployer
         
-        if not src.exists():
-            print_warning(f"  Module not found, skipping: {module}")
-            continue
+        Args:
+            config: DeploymentConfig object
+            drive_path: Optional manual drive path
+        """
+        self.config = config
+        self.drive = None
+        self.stats = {
+            'copied': 0,
+            'skipped': 0,
+            'failed': 0,
+            'compiled': 0,
+        }
         
-        dst = Path(drive_path) / module
+        # Find or verify drive
+        if drive_path:
+            print_info(f"Using specified drive: {drive_path}")
+            self.drive = CircuitPyDrive(drive_path)
+        elif config.get('targets.auto_detect', True):
+            print_info("Auto-detecting CIRCUITPY drive...")
+            self.drive = self._auto_detect_drive()
+        else:
+            print_error("Auto-detect disabled and no drive specified!")
+            sys.exit(1)
         
-        # Check if file needs updating
-        if files_differ(src, dst):
+        print_success(f"Found drive: {self.drive.path}")
+        print_info(f"  {self.drive.boot_info}")
+    
+    def _auto_detect_drive(self):
+        """Auto-detect CIRCUITPY drive"""
+        mount_points = self.config.get_mount_points()
+        
+        for point in mount_points:
             try:
-                copy_file_with_backup(src, dst, backup)
-                files_copied += 1
-            except Exception as e:
-                print_error(f"  Failed to deploy {module}: {e}")
-                all_success = False
-        else:
-            print_info(f"  Unchanged: {module}")
-            files_skipped += 1
-    
-    if files_copied > 0:
-        print_success(f"Deployed {files_copied} module(s)")
-    if files_skipped > 0:
-        print_info(f"Skipped {files_skipped} unchanged module(s)")
-    
-    # Check for unknown files on drive and undeployed files in repo
-    print()
-    unknown_on_drive, unknown_in_repo = check_for_unknown_files(drive_path, known_files, src_dir)
-    
-    return all_success, files_copied, files_skipped
-
-def deploy_config_files(drive_path, backup=True):
-    """
-    Deploy configuration files from config/ directory to CIRCUITPY drive
-    Copies settings.toml and hardware.toml if they exist.
-    
-    Args:
-        drive_path: Path to CIRCUITPY drive
-        backup: If True, backup existing files
-    
-    Returns:
-        Tuple of (success, files_copied)
-    """
-    print_info("Deploying configuration files...")
-    
-    config_dir = Path("config")
-    config_files = ["settings.toml", "hardware.toml"]
-    
-    files_copied = 0
-    all_success = True
-    
-    for config_file in config_files:
-        src = config_dir / config_file
+                drive = CircuitPyDrive(point)
+                return drive
+            except (FileNotFoundError, ValueError):
+                continue
         
-        # Check if config file exists
-        if not src.exists():
-            print_info(f"  {config_file} not found in config/, skipping")
-            continue
+        print_error("Could not auto-detect CIRCUITPY drive!")
+        print_info("Available mount points checked:")
+        for point in mount_points:
+            print(f"  - {point}")
+        sys.exit(1)
+    
+    def create_backup(self):
+        """Create backup of current drive contents"""
+        if not self.config.get('options.backup', True):
+            return
         
-        dst = Path(drive_path) / config_file
+        print_header("Creating Backup")
         
-        # Check if file needs updating
-        if files_differ(src, dst):
-            try:
-                copy_file_with_backup(src, dst, backup)
-                files_copied += 1
-            except Exception as e:
-                print_error(f"  Failed to deploy {config_file}: {e}")
-                all_success = False
-        else:
-            print_info(f"  Unchanged: {config_file}")
-    
-    if files_copied > 0:
-        print_success(f"Deployed {files_copied} config file(s)")
-    elif config_dir.exists():
-        print_info("No config files to deploy or all unchanged")
-    else:
-        print_info("No config directory found")
-    
-    return all_success, files_copied
-
-def clean_deployment(drive_path):
-    """
-    Clean existing deployment (remove old files)
-    
-    Args:
-        drive_path: Path to CIRCUITPY drive
-    """
-    print_info("Cleaning existing deployment...")
-    
-    # Python modules to remove (including backups)
-    python_modules = [
-        "code.py",
-        "debug.py",
-        "accelerometer.py",
-        "binary_logger.py",
-        "config.py",
-        "gps.py",
-        "hardware_setup.py",
-        "hardware_config.py",
-        "neopixel_handler.py",
-        "oled.py",
-        "pcf8523_rtc.py",
-        "rtc_handler.py",
-        "sdcard.py",
-        "serial_com.py",
-        "session_logger.py",
-        "utils.py",
-    ]
-    
-    files_removed = 0
-    
-    for module in python_modules:
-        # Remove main file
-        file_path = Path(drive_path) / module
-        if file_path.exists():
-            file_path.unlink()
-            print_info(f"  Removed {module}")
-            files_removed += 1
+        backup_dir = Path(self.config.get('options.backup_dir', 'backups'))
+        backup_dir.mkdir(exist_ok=True)
         
-        # Remove backup if exists
-        backup_path = Path(drive_path) / f"{module}.backup"
-        if backup_path.exists():
-            backup_path.unlink()
-            print_info(f"  Removed {module}.backup")
-            files_removed += 1
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        backup_path = backup_dir / f"backup_{timestamp}"
+        
+        try:
+            shutil.copytree(self.drive.path, backup_path, 
+                          ignore=shutil.ignore_patterns('.*'))
+            print_success(f"Backup created: {backup_path}")
+        except Exception as e:
+            print_warning(f"Backup failed: {e}")
     
-    # Remove legacy files
-    legacy_files = ["logger.py", "logger.py.backup"]
-    for file in legacy_files:
-        file_path = Path(drive_path) / file
-        if file_path.exists():
-            file_path.unlink()
-            print_info(f"  Removed {file}")
-            files_removed += 1
+    def check_mpy_cross(self):
+        """Check if mpy-cross is available"""
+        try:
+            subprocess.run(['mpy-cross', '--version'], 
+                         capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
     
-    if files_removed > 0:
-        print_success(f"Cleanup complete ({files_removed} file(s) removed)")
-    else:
-        print_info("No files to clean")
-
-def validate_deployment(drive_path):
-    """
-    Validate that deployment was successful
+    def compile_to_mpy(self, py_file):
+        """
+        Compile .py to .mpy
+        
+        Args:
+            py_file: Path to .py file
+            
+        Returns:
+            Path to .mpy file or None if failed
+        """
+        mpy_file = py_file.with_suffix('.mpy')
+        
+        try:
+            subprocess.run(['mpy-cross', str(py_file), '-o', str(mpy_file)],
+                         capture_output=True, check=True)
+            
+            py_size = py_file.stat().st_size
+            mpy_size = mpy_file.stat().st_size
+            savings = (1 - mpy_size / py_size) * 100
+            
+            print_info(f"  Compiled {py_file.name}: "
+                      f"{py_size} → {mpy_size} bytes ({savings:.1f}% savings)")
+            self.stats['compiled'] += 1
+            
+            return mpy_file
+        except subprocess.CalledProcessError as e:
+            print_error(f"  Compilation failed for {py_file.name}")
+            return None
     
-    Args:
-        drive_path: Path to CIRCUITPY drive
+    def should_exclude(self, filename):
+        """Check if file should be excluded"""
+        exclude_patterns = self.config.get('options.exclude', [])
+        
+        for pattern in exclude_patterns:
+            if pattern.startswith('*.'):
+                # Extension pattern
+                if filename.endswith(pattern[1:]):
+                    return True
+            elif pattern in str(filename):
+                return True
+        
+        return False
     
-    Returns:
-        True if valid, False otherwise
-    """
-    print_info("Validating deployment...")
+    def deploy_files(self, use_mpy=False):
+        """
+        Deploy all file groups
+        
+        Args:
+            use_mpy: Force .mpy compilation
+        """
+        print_header("Deploying Files")
+        
+        # Check mpy-cross availability
+        if use_mpy and not self.check_mpy_cross():
+            print_warning("mpy-cross not found, deploying .py files instead")
+            use_mpy = False
+        
+        deployed_files = set()
+        file_groups = self.config.get_file_groups()
+        
+        for group_name, group_config in file_groups.items():
+            print(f"\n[{group_name}]")
+            
+            # Check if group is optional
+            optional = group_config.get('optional', False)
+            
+            # Handle copy_tree (entire directory)
+            if group_config.get('copy_tree', False):
+                self._deploy_tree(group_config, deployed_files)
+                continue
+            
+            # Deploy individual files
+            source_dir = Path(group_config.get('source_dir', '.'))
+            destination = group_config.get('destination', '/')
+            files = group_config.get('files', [])
+            
+            for filename in files:
+                source = source_dir / filename
+                
+                # Check if file exists
+                if not source.exists():
+                    if optional:
+                        print_info(f"  Skipped {filename} (optional, not found)")
+                        self.stats['skipped'] += 1
+                        continue
+                    else:
+                        print_error(f"  Required file not found: {source}")
+                        self.stats['failed'] += 1
+                        continue
+                
+                # Check exclusions
+                if self.should_exclude(filename):
+                    print_info(f"  Excluded {filename}")
+                    self.stats['skipped'] += 1
+                    continue
+                
+                # Determine destination path
+                if destination == '/':
+                    dest_path = self.drive.path / filename
+                else:
+                    dest_dir = self.drive.path / destination.lstrip('/')
+                    dest_dir.mkdir(parents=True, exist_ok=True)
+                    dest_path = dest_dir / filename
+                
+                # Compile to .mpy if requested
+                if use_mpy and source.suffix == '.py':
+                    mpy_file = self.compile_to_mpy(source)
+                    if mpy_file:
+                        source = mpy_file
+                        dest_path = dest_path.with_suffix('.mpy')
+                
+                # Copy file
+                try:
+                    shutil.copy2(source, dest_path)
+                    print_success(f"  Copied {filename} → {dest_path.relative_to(self.drive.path)}")
+                    deployed_files.add(str(dest_path.relative_to(self.drive.path)))
+                    self.stats['copied'] += 1
+                except Exception as e:
+                    print_error(f"  Failed to copy {filename}: {e}")
+                    self.stats['failed'] += 1
+        
+        return deployed_files
     
-    # Required Python modules
-    required_files = [
-        "code.py",
-        "debug.py",
-        "hardware_setup.py",
-        "hardware_config.py",
-        "utils.py",
-    ]
-    
-    # Optional modules (warn if missing but don't fail)
-    optional_files = [
-        "accelerometer.py",
-        "binary_logger.py",
-        "config.py",
-        "gps.py",
-        "neopixel_handler.py",
-        "oled.py",
-        "pcf8523_rtc.py",
-        "rtc_handler.py",
-        "sdcard.py",
-        "serial_com.py",
-        "session_logger.py",
-    ]
-    
-    # Recommended libraries
-    recommended_libs = [
-        "lib/adafruit_lis3dh.mpy",
-        "lib/adafruit_gps.mpy",
-        "lib/adafruit_displayio_ssd1306.mpy",
-        "lib/adafruit_display_text",
-        "lib/adafruit_bitmap_font",
-        "lib/adafruit_pcf8523",
-        "lib/adafruit_register",
-        "lib/neopixel.mpy",
-    ]
-    
-    all_valid = True
-    
-    print_info("Required modules:")
-    for file in required_files:
-        file_path = Path(drive_path) / file
-        if file_path.exists():
-            size = file_path.stat().st_size
-            print_success(f"  {file} ({size:,} bytes)")
-        else:
-            print_error(f"  Missing: {file}")
-            all_valid = False
-    
-    print_info("Optional modules:")
-    optional_found = 0
-    for file in optional_files:
-        file_path = Path(drive_path) / file
-        if file_path.exists():
-            size = file_path.stat().st_size
-            print_success(f"  {file} ({size:,} bytes)")
-            optional_found += 1
-        else:
-            print_warning(f"  Not found: {file}")
-    
-    print_info(f"Found {optional_found}/{len(optional_files)} optional modules")
-    
-    print_info("Recommended libraries (install with --install-deps):")
-    libs_found = 0
-    for file in recommended_libs:
-        file_path = Path(drive_path) / file
-        if file_path.exists():
-            if file_path.is_dir():
-                print_success(f"  {file}/ (directory)")
-                libs_found += 1
+    def _deploy_tree(self, group_config, deployed_files):
+        """Deploy entire directory tree"""
+        source_dir = Path(group_config.get('source_dir', '.'))
+        destination = group_config.get('destination', '/')
+        
+        if not source_dir.exists():
+            if group_config.get('optional', False):
+                print_info(f"  Skipped (directory not found)")
+                self.stats['skipped'] += 1
+                return
             else:
-                size = file_path.stat().st_size
-                print_success(f"  {file} ({size:,} bytes)")
-                libs_found += 1
-        else:
-            print_warning(f"  Not found: {file}")
-    
-    if libs_found < len(recommended_libs):
-        print_warning(f"Only {libs_found}/{len(recommended_libs)} libraries found. Run: make install-deps")
-    
-    # Check for configuration files (optional but recommended)
-    print_info("Configuration files:")
-    config_files = ["settings.toml", "hardware.toml"]
-    config_found = 0
-    for file in config_files:
-        file_path = Path(drive_path) / file
-        if file_path.exists():
-            size = file_path.stat().st_size
-            print_success(f"  {file} ({size:,} bytes)")
-            config_found += 1
-        else:
-            print_info(f"  Not found: {file} (will use defaults)")
-    
-    if config_found == 0:
-        print_info("No config files found - using default settings")
-        print_info("To customize: copy config/*.toml to config/ directory and redeploy")
-    
-    return all_valid
-
-def install_circuitpython_libs(drive_path):
-    """
-    Install CircuitPython libraries using circup
-    
-    Args:
-        drive_path: Path to CIRCUITPY drive
-    
-    Returns:
-        True if successful, False otherwise
-    """
-    print_info("Checking for circup (CircuitPython library installer)...")
-    
-    # Check if circup is installed
-    try:
-        subprocess.run(["circup", "--version"], 
-                      capture_output=True, 
-                      check=True)
-        print_success("circup found")
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        print_warning("circup not installed")
-        print_info("Install with: pip install circup")
-        return False
-    
-    # Install/update libraries
-    print_info("Installing/updating CircuitPython libraries...")
-    
-    req_file = Path("circuitpython/requirements.txt")
-    if not req_file.exists():
-        print_error(f"Requirements file not found: {req_file}")
-        return False
-    
-    try:
-        result = subprocess.run(
-            ["circup", "install", "-r", str(req_file), "--path", drive_path],
-            capture_output=True,
-            text=True,
-            check=True
-        )
-        print(result.stdout)
-        print_success("Libraries installed/updated")
-        return True
+                print_error(f"  Directory not found: {source_dir}")
+                self.stats['failed'] += 1
+                return
         
-    except subprocess.CalledProcessError as e:
-        print_error(f"Failed to install libraries: {e}")
-        if e.stderr:
-            print(e.stderr)
-        return False
+        # Destination directory
+        if destination == '/':
+            dest_dir = self.drive.path
+        else:
+            dest_dir = self.drive.path / destination.lstrip('/')
+        
+        # Copy tree
+        try:
+            if dest_dir.exists():
+                shutil.rmtree(dest_dir)
+            
+            shutil.copytree(source_dir, dest_dir,
+                          ignore=shutil.ignore_patterns('.*'))
+            
+            # Count files copied
+            file_count = sum(1 for _ in dest_dir.rglob('*') if _.is_file())
+            
+            print_success(f"  Copied directory tree: {source_dir} → {dest_dir.relative_to(self.drive.path)} ({file_count} files)")
+            
+            # Add all files to deployed set
+            for filepath in dest_dir.rglob('*'):
+                if filepath.is_file():
+                    deployed_files.add(str(filepath.relative_to(self.drive.path)))
+            
+            self.stats['copied'] += file_count
+            
+        except Exception as e:
+            print_error(f"  Failed to copy tree: {e}")
+            self.stats['failed'] += 1
+    
+    def check_orphans(self, deployed_files, delete=False):
+        """
+        Check for orphaned files on drive
+        
+        Args:
+            deployed_files: Set of files that were deployed
+            delete: Delete orphaned files if True
+        """
+        if not self.config.get('options.warn_orphans', True):
+            return
+        
+        print_header("Checking for Orphaned Files")
+        
+        drive_files = self.drive.list_files()
+        orphans = drive_files - deployed_files
+        
+        # Filter out system files
+        system_patterns = ['boot_out.txt', 'System Volume Information', '.Trashes']
+        orphans = {f for f in orphans if not any(p in f for p in system_patterns)}
+        
+        if not orphans:
+            print_success("No orphaned files found")
+            return
+        
+        print_warning(f"Found {len(orphans)} orphaned file(s) on drive:")
+        for orphan in sorted(orphans):
+            print(f"  - {orphan}")
+        
+        if delete or self.config.get('options.delete_orphans', False):
+            print("\n" + Colors.WARNING + "Deleting orphaned files..." + Colors.ENDC)
+            for orphan in orphans:
+                try:
+                    orphan_path = self.drive.path / orphan
+                    orphan_path.unlink()
+                    print_info(f"  Deleted: {orphan}")
+                except Exception as e:
+                    print_error(f"  Failed to delete {orphan}: {e}")
+        else:
+            print_info("\nTo auto-delete orphans, set delete_orphans=true in deploy.toml")
+            print_info("or use --clean flag")
+    
+    def validate_deployment(self):
+        """Validate that required files are present"""
+        print_header("Validating Deployment")
+        
+        required = self.config.get('validation.required', [])
+        missing = []
+        
+        for filename in required:
+            filepath = self.drive.path / filename
+            if filepath.exists():
+                size = filepath.stat().st_size
+                print_success(f"  {filename} ({size:,} bytes)")
+            else:
+                print_error(f"  Missing: {filename}")
+                missing.append(filename)
+        
+        # Check required libraries
+        lib_dir = self.drive.path / 'lib'
+        if lib_dir.exists():
+            required_libs = self.config.get('validation.required_libs', [])
+            for lib in required_libs:
+                lib_path = lib_dir / lib
+                if lib_path.exists() or (lib_path.parent / f"{lib_path.stem}.mpy").exists():
+                    print_success(f"  lib/{lib}")
+                else:
+                    print_warning(f"  Missing lib: {lib}")
+        
+        # Check free space
+        free_space = self.drive.get_free_space()
+        min_space = self.config.get('validation.min_free_space', 1048576)
+        
+        if free_space < min_space:
+            print_warning(f"  Low free space: {free_space:,} bytes (min: {min_space:,})")
+        else:
+            print_success(f"  Free space: {free_space:,} bytes")
+        
+        if missing:
+            print_error(f"\n{len(missing)} required file(s) missing!")
+            return False
+        
+        return True
+    
+    def print_stats(self):
+        """Print deployment statistics"""
+        print_header("Deployment Statistics")
+        
+        print(f"  Files copied:    {self.stats['copied']}")
+        print(f"  Files skipped:   {self.stats['skipped']}")
+        print(f"  Files failed:    {self.stats['failed']}")
+        print(f"  Files compiled:  {self.stats['compiled']}")
+        
+        if self.stats['failed'] > 0:
+            print_warning(f"\n{self.stats['failed']} file(s) failed to copy!")
 
-def reset_pico(drive_path):
-    """
-    Factory reset the Pico by deploying a filesystem erase script
-    
-    Args:
-        drive_path: Path to CIRCUITPY drive
-    """
-    print_header("Factory Reset Pico")
-    
-    print_error("WARNING: This will ERASE ALL DATA on the Pico!")
-    print_warning("This includes:")
-    print("  - All Python files (code.py, logger.py, etc.)")
-    print("  - All libraries (/lib directory)")
-    print("  - All settings (settings.toml, boot.py)")
-    print("  - All user data")
-    print()
-    
-    confirm = input("Type 'RESET' to confirm: ")
-    if confirm != "RESET":
-        print_warning("Reset cancelled")
-        return False
-    
-    print()
-    print_info("Creating reset script...")
-    
-    reset_script = """import storage
-import os
-
-print("=" * 50)
-print("FACTORY RESET - Erasing filesystem...")
-print("=" * 50)
-
-try:
-    storage.erase_filesystem()
-    print("✓ Filesystem erased successfully")
-    print("Pico will now reboot with clean filesystem")
-except Exception as e:
-    print(f"✗ Reset failed: {e}")
-"""
-    
-    reset_path = Path(drive_path) / "code.py"
-    with open(reset_path, 'w') as f:
-        f.write(reset_script)
-    
-    print_success("Reset script deployed")
-    print()
-    print_warning("Please eject and reset your Pico now.")
-    print("The Pico will:")
-    print("  1. Boot and run the reset script")
-    print("  2. Erase the filesystem")
-    print("  3. Reboot with a clean filesystem")
-    print()
-    print_info("After reset, run: make install-deps && make deploy")
-    
-    return True
-
-def show_post_deployment_info(drive_path):
-    """Show helpful information after deployment"""
-    print_header("Deployment Complete!")
-    
-    print(f"{Colors.OKGREEN}Next steps:{Colors.ENDC}")
-    print(f"  1. Safely eject CIRCUITPY drive")
-    print(f"  2. Pico will auto-restart with new code")
-    print(f"  3. Connect via serial to view output")
-    print()
-    
-    print(f"{Colors.OKCYAN}Serial Console:{Colors.ENDC}")
-    system = platform.system()
-    if system == "Darwin":
-        print(f"  screen /dev/tty.usbmodem* 115200")
-    elif system == "Linux":
-        print(f"  screen /dev/ttyACM0 115200")
-    print()
-    
-    print(f"{Colors.WARNING}Troubleshooting:{Colors.ENDC}")
-    print(f"  - Check serial output for errors")
-    print(f"  - Verify libraries installed: make validate")
-    print(f"  - Install deps if needed: make install-deps")
-    print()
 
 def main():
+    """Main entry point"""
     parser = argparse.ArgumentParser(
         description="Deploy OpenPonyLogger to CircuitPython device",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python3 deploy_to_pico.py                 # Auto-detect and deploy
-  python3 deploy_to_pico.py --clean         # Clean install
-  python3 deploy_to_pico.py --no-backup     # Don't backup existing files
-  python3 deploy_to_pico.py --install-deps  # Also install CircuitPython libs
-  python3 deploy_to_pico.py --reset         # Factory reset Pico
+  python3 deploy_to_pico.py                    # Use deploy.toml
+  python3 deploy_to_pico.py --drive /Volumes/CIRCUITPY
+  python3 deploy_to_pico.py --clean            # Delete orphaned files
+  python3 deploy_to_pico.py --mpy              # Compile to .mpy
+  python3 deploy_to_pico.py --config custom.toml
         """
     )
     
-    parser.add_argument('--drive', 
+    parser.add_argument('--config', default='deploy.toml',
+                       help='Path to deployment config file')
+    parser.add_argument('--drive',
                        help='Path to CIRCUITPY drive (auto-detect if not specified)')
-    parser.add_argument('--clean', 
-                       action='store_true',
-                       help='Clean existing deployment before installing')
-    parser.add_argument('--no-backup', 
-                       action='store_true',
-                       help='Do not backup existing files')
-    parser.add_argument('--install-deps', 
-                       action='store_true',
-                       help='Install/update CircuitPython libraries via circup')
-    parser.add_argument('--reset', 
-                       action='store_true',
-                       help='Factory reset Pico filesystem (DESTRUCTIVE)')
+    parser.add_argument('--clean', action='store_true',
+                       help='Delete orphaned files on drive')
+    parser.add_argument('--mpy', action='store_true',
+                       help='Compile Python files to .mpy bytecode')
+    parser.add_argument('--no-backup', action='store_true',
+                       help='Skip backup creation')
     
     args = parser.parse_args()
     
-    print_header("OpenPonyLogger - CircuitPython Deployment")
+    print_header("OpenPonyLogger - CircuitPython Deployment Tool")
     
-    # Check we're in git repo
-    if not check_git_repo():
-        return 1
+    # Load configuration
+    config = DeploymentConfig(args.config)
     
-    # Find CIRCUITPY drive
-    if args.drive:
-        drive_path = args.drive
-        print_info(f"Using specified drive: {drive_path}")
-    else:
-        print_info("Auto-detecting CIRCUITPY drive...")
-        drive_path = find_circuitpy_drive()
+    # Initialize deployer
+    deployer = Deployer(config, drive_path=args.drive)
     
-    if not drive_path:
-        print_error("Could not find CIRCUITPY drive!")
-        print_info("Please specify with --drive /path/to/CIRCUITPY")
-        return 1
+    # Create backup
+    if not args.no_backup:
+        deployer.create_backup()
     
-    if not os.path.isdir(drive_path):
-        print_error(f"Drive path does not exist: {drive_path}")
-        return 1
+    # Deploy files
+    deployed_files = deployer.deploy_files(use_mpy=args.mpy)
     
-    print_success(f"Found CIRCUITPY drive: {drive_path}")
-    
-    # Show drive info
-    boot_out = Path(drive_path) / "boot_out.txt"
-    if boot_out.exists():
-        with open(boot_out) as f:
-            first_line = f.readline().strip()
-            print_info(f"  {first_line}")
-    
-    # Handle reset separately
-    if args.reset:
-        return 0 if reset_pico(drive_path) else 1
-    
-    # Clean if requested
-    if args.clean:
-        clean_deployment(drive_path)
-    
-    # Deploy Python modules
-    print_header("Deploying to Pico")
-    success, copied, skipped = deploy_python_modules(drive_path, backup=not args.no_backup)
-    if not success:
-        print_error("Deployment had errors!")
-        return 1
-    
-    if copied == 0 and skipped > 0:
-        print_info("All modules are up to date!")
-    elif copied > 0:
-        print_success(f"Successfully deployed {copied} updated module(s)")
-    
-    # Deploy configuration files (settings.toml, hardware.toml)
-    config_success, config_copied = deploy_config_files(drive_path, backup=not args.no_backup)
-    if config_copied > 0:
-        print_success(f"Deployed {config_copied} configuration file(s)")
-    
-    # Install dependencies if requested
-    if args.install_deps:
-        print_header("Installing CircuitPython Libraries")
-        install_circuitpython_libs(drive_path)
+    # Check for orphans
+    deployer.check_orphans(deployed_files, delete=args.clean)
     
     # Validate deployment
-    print_header("Validating Deployment")
-    if not validate_deployment(drive_path):
-        print_warning("Validation found issues - please check manually")
-    else:
-        print_success("All required files present!")
+    deployer.validate_deployment()
     
-    # Show post-deployment info
-    show_post_deployment_info(drive_path)
+    # Print statistics
+    deployer.print_stats()
     
-    return 0
+    # Success message
+    print_header("Deployment Complete!")
+    print_success("Next steps:")
+    print("  1. Safely eject CIRCUITPY drive")
+    print("  2. Pico will auto-restart with new code")
+    print("  3. Check serial console for boot messages")
+    
+    return 0 if deployer.stats['failed'] == 0 else 1
+
 
 if __name__ == '__main__':
     try:
