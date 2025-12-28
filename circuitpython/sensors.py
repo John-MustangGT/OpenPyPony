@@ -95,11 +95,38 @@ class GPSInterface:
     def get_satellites(self):
         """
         Get number of satellites
-        
+
         Returns:
             int: Number of satellites in use
         """
         raise NotImplementedError("Subclass must implement get_satellites()")
+
+    def get_fix_quality(self):
+        """
+        Get GPS fix quality
+
+        Returns:
+            int: Fix quality (0=no fix, 1=GPS fix, 2=DGPS fix)
+        """
+        raise NotImplementedError("Subclass must implement get_fix_quality()")
+
+    def get_fix_type(self):
+        """
+        Get GPS fix type (2D/3D)
+
+        Returns:
+            str: Fix type ('No Fix', '2D', '3D')
+        """
+        raise NotImplementedError("Subclass must implement get_fix_type()")
+
+    def get_hdop(self):
+        """
+        Get Horizontal Dilution of Precision
+
+        Returns:
+            float: HDOP value (lower is better)
+        """
+        raise NotImplementedError("Subclass must implement get_hdop()")
 
 
 class RTCInterface:
@@ -324,7 +351,44 @@ class ATGM336H(GPSInterface):
     def get_satellites(self):
         """Get number of satellites"""
         return self.gps.satellites or 0
-    
+
+    def get_fix_quality(self):
+        """
+        Get GPS fix quality
+
+        Returns:
+            int: Fix quality (0=no fix, 1=GPS fix, 2=DGPS fix)
+        """
+        return self.gps.fix_quality or 0
+
+    def get_fix_type(self):
+        """
+        Get GPS fix type (2D/3D)
+
+        Returns:
+            str: Fix type ('No Fix', '2D', '3D')
+        """
+        if not self.gps.has_fix:
+            return 'No Fix'
+
+        # fix_quality_3d: 1=no fix, 2=2D fix, 3=3D fix
+        fix_3d = self.gps.fix_quality_3d or 1
+        if fix_3d == 3:
+            return '3D'
+        elif fix_3d == 2:
+            return '2D'
+        else:
+            return 'No Fix'
+
+    def get_hdop(self):
+        """
+        Get Horizontal Dilution of Precision
+
+        Returns:
+            float: HDOP value (lower is better, <1=excellent, 1-2=good, 2-5=moderate, 5-10=fair, >10=poor)
+        """
+        return self.gps.hdop
+
     def configure_rate(self, rate_ms=1000):
         """
         Configure GPS update rate
