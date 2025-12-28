@@ -8,6 +8,7 @@ import time
 from config import Config
 from hardware import HardwareAbstractionLayer
 from session import SessionManager
+from logger import create_logger
 
 # Version information
 VERSION = "2.0.0-alpha"
@@ -77,15 +78,22 @@ else:
 print("\n[Boot] Setting up session...")
 
 storage = hal.get_storage()
+logger = None
+
 if storage:
     session_mgr = SessionManager(storage, base_path='/sd')
     session_file = session_mgr.start_new_session()
-    print(f"[Session] File: {session_mgr.get_session_path()}")
-    
+    session_path = session_mgr.get_session_path()
+    print(f"[Session] File: {session_path}")
+
     # List recent sessions
     recent = session_mgr.list_sessions(limit=5)
     if recent:
         print(f"[Session] Recent sessions: {', '.join(recent[:3])}")
+
+    # Create and open logger
+    logger = create_logger(session_path, config, hal.manifest)
+    logger.open()
 else:
     print("[Session] ERROR: No storage available!")
     print("[Session] Cannot proceed without SD card")
@@ -123,33 +131,51 @@ last_display_update = 0
 try:
     while True:
         current_time = time.monotonic()
-        
+
         # Update GPS
-        if gps.update():
-            pos = gps.get_position()
-            speed = gps.get_speed()
-            
-            # Read accelerometer
-            gx, gy, gz = accel.get_gforce()
-            
-            # Print status every second
-            if loop_count % 10 == 0:
-                print(f"[{int(current_time)}s] GPS: {pos[0]:.6f}, {pos[1]:.6f} | "
-                      f"Speed: {speed:.1f} m/s | G: {gx:+.2f}, {gy:+.2f}, {gz:+.2f}")
-            
-            # Update display (5Hz)
-            if hal.has_display() and (current_time - last_display_update) >= 0.2:
-                display.clear()
-                display.text("OpenPonyLogger", 0, 0)
-                display.text(f"Sats: {gps.get_satellites()}", 0, 12)
-                display.text(f"Speed: {speed:.1f} m/s", 0, 24)
-                display.text(f"G: {gx:+.1f} {gy:+.1f} {gz:+.1f}", 0, 36)
-                display.show()
-                last_display_update = current_time
-            
-            # TODO: Log data to session file
-            # logger.log_frame(gps_data, accel_data, timestamp)
-        
+        gps.update()
+
+        # Read accelerometer
+        gx, gy, gz = accel.get_gforce()
+
+        # Prepare data for logging
+        gps_data = {
+            'lat': gps.get_position()[0] if gps.has_fix() else 0.0,
+            'lon': gps.get_position()[1] if gps.has_fix() else 0.0,
+            'alt': gps.get_position()[2] if gps.has_fix() else 0.0,
+            'speed': gps.get_speed() if gps.has_fix() else 0.0,
+            'satellites': gps.get_satellites()
+        }
+
+        accel_data = {
+            'gx': gx,
+            'gy': gy,
+            'gz': gz
+        }
+
+        # Log data frame
+        if logger:
+            logger.log_frame(gps_data, accel_data, time.time())
+
+        # Print status every second
+        if loop_count % 10 == 0:
+            if gps.has_fix():
+                print(f"[{int(current_time)}s] GPS: {gps_data['lat']:.6f}, {gps_data['lon']:.6f} | "
+                      f"Speed: {gps_data['speed']:.1f} m/s | G: {gx:+.2f}, {gy:+.2f}, {gz:+.2f}")
+            else:
+                print(f"[{int(current_time)}s] GPS: No fix ({gps.get_satellites()} sats) | "
+                      f"G: {gx:+.2f}, {gy:+.2f}, {gz:+.2f}")
+
+        # Update display (5Hz)
+        if hal.has_display() and (current_time - last_display_update) >= 0.2:
+            display.clear()
+            display.text("OpenPonyLogger", 0, 0)
+            display.text(f"Sats: {gps.get_satellites()}", 0, 12)
+            display.text(f"Speed: {gps_data['speed']:.1f} m/s", 0, 24)
+            display.text(f"G: {gx:+.1f} {gy:+.1f} {gz:+.1f}", 0, 36)
+            display.show()
+            last_display_update = current_time
+
         loop_count += 1
         time.sleep(0.1)  # 10Hz main loop
 
@@ -157,15 +183,19 @@ except KeyboardInterrupt:
     print("\n\n" + "="*60)
     print("Shutdown requested")
     print("="*60)
-    
-    # TODO: Cleanup
-    # - Flush logger buffers
-    # - Close session file
-    # - Save any pending data
-    
+
+    # Cleanup: close logger and flush all data
+    if logger:
+        print("[Shutdown] Closing logger...")
+        logger.close()
+
+    # Display shutdown message
     if hal.has_display():
         display.clear()
         display.text("Shutdown", 0, 0)
+        display.text("Data saved", 0, 12)
         display.show()
-    
+        time.sleep(1)
+
     print("\n✓ Shutdown complete")
+    print(f"✓ Logged {loop_count} samples")
