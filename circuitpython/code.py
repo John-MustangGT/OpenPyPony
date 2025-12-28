@@ -164,7 +164,7 @@ def main():
                 last_status_print = now * 1000
                 print(f"Status: {sensor_data}")
             
-            time.sleep(0.01)  # 100Hz main loop
+            #time.sleep(0.01)  # 100Hz main loop
             
     except KeyboardInterrupt:
         print("\nStopping...")
