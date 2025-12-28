@@ -108,7 +108,7 @@ class PCF8523Handler:
     def set_time(self, new_time):
         """
         Set time on both system and PCF8523 (if sync_to_rtc enabled)
-        
+
         Args:
             dt : struct_datetime
         """
@@ -119,11 +119,17 @@ class PCF8523Handler:
         hour   = new_time.tm_hour
         minute = new_time.tm_min
         second = new_time.tm_sec
-        
+
+        # Validate datetime (GPS sometimes has time but not date)
+        if year < 2000 or month < 1 or month > 12 or day < 1 or day > 31:
+            print(f"[RTC] Invalid datetime from GPS: {year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
+            print(f"[RTC] GPS may have time lock but not date lock yet - waiting...")
+            return
+
         # Set system RTC
         rtc.RTC().datetime = new_time
         print(f"[RTC] System time set: {year:04d}-{month:02d}-{day:02d} {hour:02d}:{minute:02d}:{second:02d}")
-        
+
         # Optionally sync to PCF8523
         if self.sync_to_rtc and self.rtc_device:
             self.sync_from_system_to_rtc()
