@@ -20,7 +20,7 @@ auto_detect = true
 
 # Main application code
 [files.core]
-source_dir = "refactored_core"
+source_dir = "circuitpython"
 files = [
     "code.py",
     "config.py",
@@ -33,7 +33,7 @@ destination = "/"
 
 # Configuration files
 [files.config]
-source_dir = "."
+source_dir = "config"
 files = [
     "settings.toml",
 ]
@@ -104,7 +104,7 @@ required = [
 required_libs = [
     "adafruit_lis3dh.mpy",
     "adafruit_gps.mpy",
-    "adafruit_pcf8523.mpy",
+    "adafruit_pcf8523",
     "adafruit_displayio_ssd1306.mpy",
     "adafruit_display_text",
 ]

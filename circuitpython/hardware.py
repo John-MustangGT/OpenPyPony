@@ -3,6 +3,15 @@ hardware.py - Hardware Abstraction Layer
 
 Detects and initializes all hardware based on configuration.
 Provides unified interface to access all sensors and peripherals.
+
+Pin Assignments:
+  GP0/GP1   - ESP-01 UART (TX/RX) - Reserved for future ESP-01 integration
+  GP4/GP5   - I2C STEMMA QT (SDA/SCL) - Accelerometer, RTC, OLED
+  GP6       - ESP-01 Reset - Reserved for future ESP-01 integration  
+  GP7       - GPS PPS (Pulse Per Second) - Reserved for future use
+  GP8/GP9   - GPS UART (TX/RX) - ATGM336H GPS module
+  GP16-GP19 - SPI (MISO/CS/SCK/MOSI) - SD Card on PiCowbell Adalogger
+  GP22      - NeoPixel Jewel - Reserved for future LED integration
 """
 
 import board
@@ -69,12 +78,39 @@ class HardwareAbstractionLayer:
         """Initialize communication buses (I2C, SPI, UART)"""
         print("\n[HAL] Initializing buses...")
         
-        # I2C bus (GP8=SDA, GP9=SCL)
+        # Release any existing displays that might hold I2C
         try:
-            self.i2c = busio.I2C(board.GP9, board.GP8)
-            print("  ✓ I2C initialized (GP9=SCL, GP8=SDA)")
+            import displayio
+            displayio.release_displays()
+        except:
+            pass
+        
+        # I2C bus - STEMMA QT (GP4=SDA, GP5=SCL)
+        try:
+            # Try to create I2C bus
+            self.i2c = busio.I2C(board.GP5, board.GP4)
+            
+            # Wait for lock
+            while not self.i2c.try_lock():
+                pass
+            
+            # Scan for devices
+            devices = self.i2c.scan()
+            self.i2c.unlock()
+            
+            print(f"  ✓ I2C initialized (GP5=SCL, GP4=SDA) [STEMMA QT]")
+            if devices:
+                print(f"    Found {len(devices)} device(s): {[hex(d) for d in devices]}")
+            else:
+                print(f"    No I2C devices detected")
+                
+        except ValueError as e:
+            print(f"  ✗ I2C init failed: {e}")
+            print(f"    Hint: Check if another device is using GP4/GP5")
+            self.i2c = None
         except Exception as e:
             print(f"  ✗ I2C init failed: {e}")
+            self.i2c = None
         
         # SPI bus for SD card (GP18=SCK, GP19=MOSI, GP16=MISO)
         try:
@@ -83,10 +119,10 @@ class HardwareAbstractionLayer:
         except Exception as e:
             print(f"  ✗ SPI init failed: {e}")
         
-        # UART for GPS (GP0=TX, GP1=RX)
+        # UART for GPS (GP8=TX, GP9=RX)
         try:
-            self.uart = busio.UART(board.GP0, board.GP1, baudrate=9600, timeout=10)
-            print("  ✓ UART initialized (GP0=TX, GP1=RX, 9600 baud)")
+            self.uart = busio.UART(board.GP8, board.GP9, baudrate=9600, timeout=10)
+            print("  ✓ UART initialized (GP8=TX, GP9=RX, 9600 baud) [GPS]")
         except Exception as e:
             print(f"  ✗ UART init failed: {e}")
     

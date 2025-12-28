@@ -1,21 +1,20 @@
 """
 sensors.py - Hardware Interfaces and Implementations
 
-Defines abstract interfaces and concrete implementations for all sensors.
+Defines base interfaces and concrete implementations for all sensors.
+Note: CircuitPython doesn't have 'abc' module, so we use simple base classes.
 """
 
-from abc import ABC, abstractmethod
 import time
 
 
 # =============================================================================
-# Abstract Interfaces
+# Base Interfaces (not abstract, but serve as contracts)
 # =============================================================================
 
-class AccelerometerInterface(ABC):
-    """Abstract interface for accelerometers"""
+class AccelerometerInterface:
+    """Base interface for accelerometers"""
     
-    @abstractmethod
     def read(self):
         """
         Read acceleration data
@@ -23,9 +22,8 @@ class AccelerometerInterface(ABC):
         Returns:
             tuple: (x, y, z) in m/s² or None if read fails
         """
-        pass
+        raise NotImplementedError("Subclass must implement read()")
     
-    @abstractmethod
     def configure(self, range_g=2, rate_hz=100):
         """
         Configure accelerometer
@@ -34,9 +32,8 @@ class AccelerometerInterface(ABC):
             range_g: Measurement range in g (2, 4, 8, 16)
             rate_hz: Sample rate in Hz
         """
-        pass
+        raise NotImplementedError("Subclass must implement configure()")
     
-    @abstractmethod
     def get_gforce(self):
         """
         Get G-force vector
@@ -44,13 +41,12 @@ class AccelerometerInterface(ABC):
         Returns:
             tuple: (gx, gy, gz) in g units
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_gforce()")
 
 
-class GPSInterface(ABC):
-    """Abstract interface for GPS modules"""
+class GPSInterface:
+    """Base interface for GPS modules"""
     
-    @abstractmethod
     def update(self):
         """
         Update GPS data (call frequently)
@@ -58,9 +54,8 @@ class GPSInterface(ABC):
         Returns:
             bool: True if new valid data available
         """
-        pass
+        raise NotImplementedError("Subclass must implement update()")
     
-    @abstractmethod
     def has_fix(self):
         """
         Check if GPS has valid fix
@@ -68,9 +63,8 @@ class GPSInterface(ABC):
         Returns:
             bool: True if valid fix
         """
-        pass
+        raise NotImplementedError("Subclass must implement has_fix()")
     
-    @abstractmethod
     def get_time(self):
         """
         Get GPS time
@@ -78,9 +72,8 @@ class GPSInterface(ABC):
         Returns:
             struct_time or None if no fix
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_time()")
     
-    @abstractmethod
     def get_position(self):
         """
         Get GPS position
@@ -88,9 +81,8 @@ class GPSInterface(ABC):
         Returns:
             tuple: (latitude, longitude, altitude) or (None, None, None)
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_position()")
     
-    @abstractmethod
     def get_speed(self):
         """
         Get GPS speed
@@ -98,9 +90,8 @@ class GPSInterface(ABC):
         Returns:
             float: Speed in m/s or None
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_speed()")
     
-    @abstractmethod
     def get_satellites(self):
         """
         Get number of satellites
@@ -108,13 +99,12 @@ class GPSInterface(ABC):
         Returns:
             int: Number of satellites in use
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_satellites()")
 
 
-class RTCInterface(ABC):
-    """Abstract interface for Real-Time Clocks"""
+class RTCInterface:
+    """Base interface for Real-Time Clocks"""
     
-    @abstractmethod
     def get_time(self):
         """
         Get current time from RTC
@@ -122,9 +112,8 @@ class RTCInterface(ABC):
         Returns:
             struct_time
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_time()")
     
-    @abstractmethod
     def set_time(self, datetime):
         """
         Set RTC time
@@ -132,23 +121,20 @@ class RTCInterface(ABC):
         Args:
             datetime: struct_time or datetime object
         """
-        pass
+        raise NotImplementedError("Subclass must implement set_time()")
 
 
-class DisplayInterface(ABC):
-    """Abstract interface for displays"""
+class DisplayInterface:
+    """Base interface for displays"""
     
-    @abstractmethod
     def clear(self):
         """Clear display"""
-        pass
+        raise NotImplementedError("Subclass must implement clear()")
     
-    @abstractmethod
     def show(self):
         """Update display"""
-        pass
+        raise NotImplementedError("Subclass must implement show()")
     
-    @abstractmethod
     def text(self, string, x, y, color=1):
         """
         Draw text
@@ -159,13 +145,12 @@ class DisplayInterface(ABC):
             y: Y coordinate
             color: Color (1=white, 0=black for monochrome)
         """
-        pass
+        raise NotImplementedError("Subclass must implement text()")
 
 
-class StorageInterface(ABC):
-    """Abstract interface for storage (SD card)"""
+class StorageInterface:
+    """Base interface for storage (SD card)"""
     
-    @abstractmethod
     def mount(self, path='/sd'):
         """
         Mount storage
@@ -176,14 +161,12 @@ class StorageInterface(ABC):
         Returns:
             bool: True if successful
         """
-        pass
+        raise NotImplementedError("Subclass must implement mount()")
     
-    @abstractmethod
     def is_mounted(self):
         """Check if storage is mounted"""
-        pass
+        raise NotImplementedError("Subclass must implement is_mounted()")
     
-    @abstractmethod
     def get_free_space(self):
         """
         Get free space
@@ -191,7 +174,7 @@ class StorageInterface(ABC):
         Returns:
             int: Free bytes
         """
-        pass
+        raise NotImplementedError("Subclass must implement get_free_space()")
 
 
 # =============================================================================
@@ -365,9 +348,9 @@ class PCF8523(RTCInterface):
         Args:
             i2c: I2C bus object
         """
-        import adafruit_pcf8523
+        from adafruit_pcf8523.pcf8523 import PCF8523 as PCF8523_Driver
         
-        self.rtc = adafruit_pcf8523.PCF8523(i2c)
+        self.rtc = PCF8523_Driver(i2c)
         
         print("[PCF8523] Initialized")
     
