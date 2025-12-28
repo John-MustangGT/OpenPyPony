@@ -453,13 +453,188 @@ class SSD1306(DisplayInterface):
     def update_text(self, index, new_text):
         """
         Update existing text label
-        
+
         Args:
             index: Index of label to update
             new_text: New text string
         """
         if 0 <= index < len(self._labels):
             self._labels[index].text = new_text
+
+    def show_splash(self, status="Booting..."):
+        """
+        Show OpenPony Logger splash screen
+
+        Args:
+            status: Status message to display
+        """
+        self.clear()
+
+        # Title "OpenPony" (large, centered)
+        title1 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="OpenPony",
+            color=0xFFFFFF,
+            x=20,
+            y=8,
+            scale=2
+        )
+        self.group.append(title1)
+
+        # Subtitle "Logger"
+        title2 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="Logger",
+            color=0xFFFFFF,
+            x=30,
+            y=26
+        )
+        self.group.append(title2)
+
+        # Status message
+        status_label = self.label_class.Label(
+            self.terminalio.FONT,
+            text=status,
+            color=0xFFFFFF,
+            x=5,
+            y=40
+        )
+        self.group.append(status_label)
+        self._labels.append(status_label)  # Store for updates
+
+        # Copyright
+        copyright_label = self.label_class.Label(
+            self.terminalio.FONT,
+            text="(c) 2025",
+            color=0xFFFFFF,
+            x=40,
+            y=56
+        )
+        self.group.append(copyright_label)
+
+    def update_splash_status(self, status):
+        """
+        Update splash screen status message
+
+        Args:
+            status: New status message
+        """
+        if self._labels:
+            self._labels[0].text = status
+
+    def setup_main_display(self):
+        """
+        Setup main display with persistent labels
+
+        Creates labels for:
+        - Line 1: Status/GPS info
+        - Line 2: Satellites
+        - Line 3: Speed
+        - Line 4: G-forces
+
+        Returns:
+            None (labels stored in self._labels for updating)
+        """
+        self.clear()
+
+        # Line 1: Status (y=8)
+        line1 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="Initializing...",
+            color=0xFFFFFF,
+            x=0,
+            y=8
+        )
+        self.group.append(line1)
+        self._labels.append(line1)
+
+        # Line 2: Satellites (y=20)
+        line2 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="Sats: --",
+            color=0xFFFFFF,
+            x=0,
+            y=20
+        )
+        self.group.append(line2)
+        self._labels.append(line2)
+
+        # Line 3: Speed (y=32)
+        line3 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="Speed: -- m/s",
+            color=0xFFFFFF,
+            x=0,
+            y=32
+        )
+        self.group.append(line3)
+        self._labels.append(line3)
+
+        # Line 4: G-forces (y=44)
+        line4 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="G: -- -- --",
+            color=0xFFFFFF,
+            x=0,
+            y=44
+        )
+        self.group.append(line4)
+        self._labels.append(line4)
+
+        # Line 5: Session info (y=56)
+        line5 = self.label_class.Label(
+            self.terminalio.FONT,
+            text="Ready",
+            color=0xFFFFFF,
+            x=0,
+            y=56
+        )
+        self.group.append(line5)
+        self._labels.append(line5)
+
+    def update_main_display(self, gps_data, accel_data, session_info=None):
+        """
+        Update main display labels
+
+        Args:
+            gps_data: dict with GPS data
+            accel_data: dict with accelerometer data
+            session_info: Optional dict with session info (name, duration)
+        """
+        if len(self._labels) < 5:
+            return  # Not initialized
+
+        # Line 1: GPS status
+        if gps_data.get('satellites', 0) > 0:
+            lat = gps_data.get('lat', 0.0)
+            lon = gps_data.get('lon', 0.0)
+            self._labels[0].text = f"GPS: {lat:.4f},{lon:.4f}"
+        else:
+            self._labels[0].text = "GPS: No Fix"
+
+        # Line 2: Satellites
+        sats = gps_data.get('satellites', 0)
+        self._labels[1].text = f"Sats: {sats}"
+
+        # Line 3: Speed
+        speed = gps_data.get('speed', 0.0)
+        self._labels[2].text = f"Speed: {speed:.1f} m/s"
+
+        # Line 4: G-forces
+        gx = accel_data.get('gx', 0.0)
+        gy = accel_data.get('gy', 0.0)
+        gz = accel_data.get('gz', 1.0)
+        self._labels[3].text = f"G:{gx:+.1f} {gy:+.1f} {gz:+.1f}"
+
+        # Line 5: Session info
+        if session_info:
+            name = session_info.get('name', 'Log')
+            duration = session_info.get('duration', 0)
+            mins = int(duration / 60)
+            secs = int(duration % 60)
+            self._labels[4].text = f"{name} {mins:02d}:{secs:02d}"
+        else:
+            self._labels[4].text = "Ready"
 
 
 class SDCard(StorageInterface):

@@ -32,10 +32,19 @@ config.dump()
 print("\n[Boot] Initializing hardware...")
 hal = HardwareAbstractionLayer(config)
 
+# Show splash screen if display available
+display = hal.get_display()
+if hal.has_display():
+    display.show_splash("Initializing...")
+
 # =============================================================================
 # Step 3: Time Synchronization (RTC -> GPS)
 # =============================================================================
 print("\n[Boot] Synchronizing time...")
+
+# Update splash status
+if hal.has_display():
+    display.update_splash_status("Syncing time...")
 
 rtc = hal.get_rtc()
 gps = hal.get_gps()
@@ -77,6 +86,10 @@ else:
 # =============================================================================
 print("\n[Boot] Setting up session...")
 
+# Update splash status
+if hal.has_display():
+    display.update_splash_status("Starting session...")
+
 storage = hal.get_storage()
 logger = None
 
@@ -100,16 +113,13 @@ else:
     # In production, we'd halt here or go to error state
 
 # =============================================================================
-# Step 5: Initialize Display (if present)
+# Step 5: Setup Main Display
 # =============================================================================
-display = hal.get_display()
 if hal.has_display():
-    print("[Display] Initializing...")
-    display.clear()
-    display.text("OpenPonyLogger", 0, 0)
-    display.text(f"v{VERSION}", 0, 10)
-    display.text("Ready!", 0, 30)
-    display.show()
+    print("[Display] Setting up main display...")
+    import time
+    time.sleep(1)  # Show splash for 1 second
+    display.setup_main_display()
 else:
     print("[Display] Not available (optional)")
 
@@ -124,9 +134,10 @@ print("="*60 + "\n")
 # Get sensor interfaces
 accel = hal.get_accelerometer()
 
-# Simple demo loop - just read sensors
+# Main loop
 loop_count = 0
 last_display_update = 0
+session_start_time = time.monotonic()
 
 try:
     while True:
@@ -169,14 +180,19 @@ try:
                 print(f"[{int(current_time)}s] GPS: No fix ({gps_data['satellites']} sats) | "
                       f"G: {accel_data['gx']:+.2f}, {accel_data['gy']:+.2f}, {accel_data['gz']:+.2f}")
 
-        # Update display (5Hz)
+        # Update display (5Hz) - using persistent labels, no flickering!
         if hal.has_display() and (current_time - last_display_update) >= 0.2:
-            display.clear()
-            display.text("OpenPonyLogger", 0, 0)
-            display.text(f"Sats: {gps_data['satellites']}", 0, 12)
-            display.text(f"Speed: {gps_data['speed']:.1f} m/s", 0, 24)
-            display.text(f"G: {accel_data['gx']:+.1f} {accel_data['gy']:+.1f} {accel_data['gz']:+.1f}", 0, 36)
-            display.show()
+            # Prepare session info
+            session_info = None
+            if logger:
+                duration = current_time - session_start_time
+                session_info = {
+                    'name': 'Log',
+                    'duration': duration
+                }
+
+            # Update display labels (no clear/redraw!)
+            display.update_main_display(gps_data, accel_data, session_info)
             last_display_update = current_time
 
         loop_count += 1
@@ -194,10 +210,9 @@ except KeyboardInterrupt:
 
     # Display shutdown message
     if hal.has_display():
-        display.clear()
-        display.text("Shutdown", 0, 0)
-        display.text("Data saved", 0, 12)
-        display.show()
+        display.show_splash("Shutdown")
+        time.sleep(0.5)
+        display.update_splash_status("Data saved")
         time.sleep(1)
 
     print("\n✓ Shutdown complete")
