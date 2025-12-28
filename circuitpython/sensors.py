@@ -360,6 +360,16 @@ class PCF8523(RTCInterface):
     
     def set_time(self, datetime):
         """Set RTC time"""
+        # Validate datetime (GPS sometimes has time but not date)
+        year = datetime.tm_year
+        month = datetime.tm_mon
+        day = datetime.tm_mday
+
+        if year < 2000 or month < 1 or month > 12 or day < 1 or day > 31:
+            print(f"[PCF8523] Invalid datetime from GPS: {year:04d}-{month:02d}-{day:02d}")
+            print(f"[PCF8523] GPS may have time lock but not date lock yet - waiting...")
+            return
+
         self.rtc.datetime = datetime
         print(f"[PCF8523] Time set to {datetime}")
 
