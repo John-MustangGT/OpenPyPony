@@ -889,14 +889,37 @@ class ESP01(WebServerInterface):
         self.reset_pin.value = False
         time.sleep(0.1)
         self.reset_pin.value = True
-        time.sleep(0.5)  # Wait for ESP to boot
 
-        # Clear UART buffer of boot ROM garbage (ESP outputs at 74880 baud during boot)
-        # This prevents the buffer from filling with noise before we get to valid commands
-        if self.uart.in_waiting:
-            discarded = self.uart.read(self.uart.in_waiting)
+        # Wait for ESP to boot and scan for sync marker (+++\n)
+        # This skips all boot ROM garbage (output at 74880 baud) until we see
+        # the sync marker sent by the ESP at the correct baudrate
+        print("[ESP01] Waiting for sync marker (+++)")
+        sync_buffer = bytearray()
+        sync_timeout = 5.0
+        sync_start = time.monotonic()
+        bytes_discarded = 0
+
+        while time.monotonic() - sync_start < sync_timeout:
+            if self.uart.in_waiting:
+                byte = self.uart.read(1)
+                if byte:
+                    bytes_discarded += 1
+                    sync_buffer.append(byte[0])
+
+                    # Keep only last 4 bytes in buffer (looking for "+++\n")
+                    if len(sync_buffer) > 4:
+                        sync_buffer.pop(0)
+
+                    # Check for sync marker: +++\n (0x2B 0x2B 0x2B 0x0A)
+                    if len(sync_buffer) >= 4 and sync_buffer[-4:] == b'+++\n':
+                        if self.debug:
+                            print(f"[ESP01] Sync marker found! Discarded {bytes_discarded} bytes of boot output")
+                        break
+            time.sleep(0.01)
+        else:
+            # Timeout waiting for sync
             if self.debug:
-                print(f"[ESP01] Flushed {len(discarded)} bytes of boot ROM output")
+                print(f"[ESP01] Sync timeout! Discarded {bytes_discarded} bytes, no marker found")
 
         # Clear internal line buffer
         self._rx_pos = 0
@@ -904,7 +927,7 @@ class ESP01(WebServerInterface):
         self._ready = False
         self._config_sent = False
 
-        print("[ESP01] Reset complete, buffer cleared")
+        print("[ESP01] Reset complete, synced")
         return True
 
     def is_ready(self):

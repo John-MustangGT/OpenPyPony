@@ -304,14 +304,8 @@ class HardwareAbstractionLayer:
             reset_pin = digitalio.DigitalInOut(board.GP6)
             self._webserver = ESP01(self.uart_esp, reset_pin, debug=False)
 
-            # Reset the ESP
+            # Reset the ESP (waits for sync marker internally)
             self._webserver.reset()
-
-            # Additional delay for ESP to fully boot and flush any remaining boot messages
-            time.sleep(1.0)
-            if self.uart_esp.in_waiting:
-                discarded = self.uart_esp.read(self.uart_esp.in_waiting)
-                print(f"  [ESP01] Flushed additional {len(discarded)} bytes of late boot output")
 
             # Wait for config request
             print("  [ESP01] Waiting for config request...")
