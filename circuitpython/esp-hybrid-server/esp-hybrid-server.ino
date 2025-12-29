@@ -8,9 +8,12 @@
  *
  * Protocol: See ESP01_PROTOCOL.md
  *
- * Hardware:
- * - UART: GPIO1 (TX), GPIO3 (RX) @ 115200 baud
- * - Reset from Pico: Via external circuit (active low)
+ * UART Configuration Modes:
+ * - Normal Mode (DEBUG_MODE = 0): Hardware UART on GPIO1(TX)/GPIO3(RX) @ 115200 baud
+ * - Debug Mode (DEBUG_MODE = 1): Software Serial on GPIO2(TX)/GPIO0(RX) @ 9600 baud
+ *
+ * Debug mode allows USB serial monitoring while communicating with Pico
+ * on alternate pins at slower speed for troubleshooting.
  *
  * Architecture:
  * - ESP handles WiFi (AP or STA mode)
@@ -25,10 +28,32 @@
 #include <ESPAsyncTCP.h>
 
 // ============================================================================
+// UART Mode Configuration
+// ============================================================================
+
+// Set to 1 for debug mode (GPIO2/0 @ 9600), 0 for normal mode (GPIO1/3 @ 115200)
+#define DEBUG_MODE 1
+
+#if DEBUG_MODE
+  // Debug mode: Software Serial on GPIO2(TX) and GPIO0(RX) @ 9600 baud
+  // Allows USB Serial debugging on hardware UART
+  #include <SoftwareSerial.h>
+  #define PICO_RX_PIN 0   // GPIO0 - RX from Pico
+  #define PICO_TX_PIN 2   // GPIO2 - TX to Pico
+  #define UART_BAUD 9600
+  SoftwareSerial PicoSerial(PICO_RX_PIN, PICO_TX_PIN);  // RX, TX
+  #define DEBUG_SERIAL Serial  // Hardware UART available for debugging
+#else
+  // Normal mode: Hardware UART on GPIO1(TX) and GPIO3(RX) @ 115200 baud
+  #define UART_BAUD 115200
+  #define PicoSerial Serial
+  // No debug serial available in normal mode
+#endif
+
+// ============================================================================
 // Configuration
 // ============================================================================
 
-#define UART_BAUD 115200
 #define STATUS_INTERVAL 5000  // Send status every 5 seconds
 
 // WiFi configuration (received from Pico)
@@ -69,22 +94,39 @@ AsyncResponseStream* currentPageResponse = nullptr;
 
 void setup() {
     // Initialize UART for Pico communication
-    Serial.begin(UART_BAUD);
-    Serial.setRxBufferSize(1024);
-
+#if DEBUG_MODE
+    // Debug mode: Initialize software serial for Pico, hardware serial for debug
+    DEBUG_SERIAL.begin(115200);  // Hardware UART for USB debugging
+    PicoSerial.begin(UART_BAUD);  // Software serial for Pico @ 9600
     delay(100);
+    DEBUG_SERIAL.println("\n\n=== ESP-01 Debug Mode ===");
+    DEBUG_SERIAL.println("SoftwareSerial on GPIO2(TX)/GPIO0(RX) @ 9600 baud");
+    DEBUG_SERIAL.println("USB Serial available for debugging");
+    DEBUG_SERIAL.println("========================\n");
+#else
+    // Normal mode: Hardware UART for Pico @ 115200
+    PicoSerial.begin(UART_BAUD);
+    PicoSerial.setRxBufferSize(1024);
+    delay(100);
+#endif
 
     // Request configuration from Pico
     requestConfig();
 
     // Wait for configuration (with timeout)
     unsigned long start = millis();
+#if DEBUG_MODE
+    DEBUG_SERIAL.println("Waiting for config from Pico...");
+#endif
     while (!configReceived && (millis() - start < 10000)) {
         processUART();
         delay(10);
     }
 
     if (!configReceived) {
+#if DEBUG_MODE
+        DEBUG_SERIAL.println("Config timeout - using defaults");
+#endif
         // No config received - use defaults and try again later
         wifi_mode = "ap";
         wifi_ssid = "OpenPonyLogger";
@@ -93,6 +135,11 @@ void setup() {
         wifi_netmask = IPAddress(255, 255, 255, 0);
         wifi_gateway = IPAddress(192, 168, 4, 1);
     }
+#if DEBUG_MODE
+    else {
+        DEBUG_SERIAL.println("Config received from Pico");
+    }
+#endif
 
     // Setup WiFi
     setupWiFi();
@@ -231,12 +278,16 @@ void setupWebSocket() {
 // ============================================================================
 
 void processUART() {
-    while (Serial.available()) {
-        char c = Serial.read();
+    while (PicoSerial.available()) {
+        char c = PicoSerial.read();
 
         if (c == '\n') {
             // Complete line received
             if (uartLineBuffer.length() > 0) {
+#if DEBUG_MODE
+                DEBUG_SERIAL.print("[PICO RX] ");
+                DEBUG_SERIAL.println(uartLineBuffer);
+#endif
                 processLine(uartLineBuffer);
                 uartLineBuffer = "";
             }
@@ -333,7 +384,11 @@ void processLine(const String& line) {
 }
 
 void sendLine(const String& line) {
-    Serial.println(line);
+#if DEBUG_MODE
+    DEBUG_SERIAL.print("[PICO TX] ");
+    DEBUG_SERIAL.println(line);
+#endif
+    PicoSerial.println(line);
 }
 
 void requestConfig() {

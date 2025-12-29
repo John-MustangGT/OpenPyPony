@@ -2,6 +2,35 @@
 
 This directory contains the ESP-01 firmware for OpenPonyLogger's hybrid web server architecture.
 
+## UART Mode Configuration
+
+The firmware supports two UART modes via `#define DEBUG_MODE` in the sketch:
+
+### Debug Mode (DEBUG_MODE = 1) - **RECOMMENDED FOR TESTING**
+- **GPIO Pins**: GPIO2 (TX to Pico) and GPIO0 (RX from Pico)
+- **Baud Rate**: 9600
+- **Advantage**: Hardware UART (GPIO1/3) remains free for USB serial debugging!
+- **Use Case**: Initial testing, protocol debugging, troubleshooting
+- **Wiring**:
+  - ESP GPIO2 → Pico GP1 (UART0 RX)
+  - ESP GPIO0 → Pico GP0 (UART0 TX)
+- **Pico Config**: Set `webserver.baudrate = 9600` in `settings.toml`
+
+### Normal Mode (DEBUG_MODE = 0) - Production
+- **GPIO Pins**: GPIO1 (TX) and GPIO3 (RX) - Hardware UART
+- **Baud Rate**: 115200
+- **Advantage**: Faster, more reliable for production use
+- **Disadvantage**: No USB serial debugging (same pins used for programming)
+- **Wiring**:
+  - ESP GPIO1 → Pico GP1 (UART0 RX)
+  - ESP GPIO3 → Pico GP0 (UART0 TX)
+- **Pico Config**: Set `webserver.baudrate = 115200` in `settings.toml`
+
+**To switch modes**: Edit line 35 in `esp-hybrid-server.ino`:
+```cpp
+#define DEBUG_MODE 1  // 1 = debug (GPIO2/0 @ 9600), 0 = normal (GPIO1/3 @ 115200)
+```
+
 ## Firmware Versions
 
 ### `esp-hybrid-server.ino` (NEW - Recommended)
@@ -11,6 +40,7 @@ Implements the dataless hybrid architecture where:
 - Simple text-based protocol (see `../ESP01_PROTOCOL.md`)
 - Minimal memory footprint
 - Supports AP and STA modes via Pico configuration
+- **NEW**: Debug mode with USB serial monitoring!
 
 ### `esp-client.ino` (OLD - Legacy)
 Original JSON-based client with:
@@ -54,13 +84,17 @@ Original JSON-based client with:
    - Install the following:
      - **ESPAsyncTCP** by Me-No-Dev
      - **ESPAsyncWebServer** by Me-No-Dev
+     - **EspSoftwareSerial** by Dirk Kaar, Peter Lerup (for DEBUG_MODE)
 
    If not available in Library Manager, install manually:
    ```bash
    cd ~/Arduino/libraries/
    git clone https://github.com/me-no-dev/ESPAsyncTCP.git
    git clone https://github.com/me-no-dev/ESPAsyncWebServer.git
+   git clone https://github.com/plerup/espsoftwareserial.git
    ```
+
+   **Note**: SoftwareSerial is only required if using DEBUG_MODE = 1
 
 ### Board Configuration
 
