@@ -307,6 +307,12 @@ class HardwareAbstractionLayer:
             # Reset the ESP
             self._webserver.reset()
 
+            # Additional delay for ESP to fully boot and flush any remaining boot messages
+            time.sleep(1.0)
+            if self.uart_esp.in_waiting:
+                discarded = self.uart_esp.read(self.uart_esp.in_waiting)
+                print(f"  [ESP01] Flushed additional {len(discarded)} bytes of late boot output")
+
             # Wait for config request
             print("  [ESP01] Waiting for config request...")
             timeout = 5  # seconds
