@@ -851,16 +851,18 @@ class SDCard(StorageInterface):
 class ESP01(WebServerInterface):
     """ESP-01 WiFi web server implementation"""
 
-    def __init__(self, uart, reset_pin):
+    def __init__(self, uart, reset_pin, debug=True):
         """
         Initialize ESP-01
 
         Args:
             uart: UART object connected to ESP-01
             reset_pin: DigitalInOut pin for ESP reset (GP6)
+            debug: Enable debug logging of UART traffic (default: True)
         """
         self.uart = uart
         self.reset_pin = reset_pin
+        self.debug = debug
         self._ready = False
         self._rx_buffer = bytearray(512)
         self._rx_pos = 0
@@ -869,6 +871,8 @@ class ESP01(WebServerInterface):
         self._config_sent = False
 
         print("[ESP01] Initialized (115200 baud)")
+        if self.debug:
+            print("[ESP01] Debug mode enabled - will show all UART traffic")
 
     def reset(self):
         """Reset ESP-01 module via hardware pin"""
@@ -914,12 +918,18 @@ class ESP01(WebServerInterface):
         # Send configuration as simple key=value lines
         try:
             self.uart.write(b'CONFIG\n')
+            if self.debug:
+                print("[ESP01 TX] CONFIG")
 
             for key, value in config_dict.items():
                 line = f"{key}={value}\n"
                 self.uart.write(line.encode())
+                if self.debug:
+                    print(f"[ESP01 TX] {key}={value}")
 
             self.uart.write(b'END\n')
+            if self.debug:
+                print("[ESP01 TX] END")
 
             self._config_sent = True
             print("[ESP01] Config sent")
@@ -946,6 +956,10 @@ class ESP01(WebServerInterface):
                             # Process complete line
                             line = bytes(self._rx_buffer[:self._rx_pos]).decode('utf-8', 'ignore').strip()
                             self._rx_pos = 0
+
+                            # Debug: Show incoming line
+                            if self.debug and line:
+                                print(f"[ESP01 RX] {line}")
 
                             # Process the line
                             result = self._process_line(line)
@@ -1042,6 +1056,16 @@ class ESP01(WebServerInterface):
             msg += "}\n"
 
             self.uart.write(msg.encode())
+
+            # Debug: Show telemetry (but limit frequency to avoid spam)
+            if self.debug:
+                # Only show every 10th telemetry message to reduce spam
+                if not hasattr(self, '_telemetry_count'):
+                    self._telemetry_count = 0
+                self._telemetry_count += 1
+                if self._telemetry_count % 10 == 0:
+                    print(f"[ESP01 TX] WS:{{...}} (telemetry #{self._telemetry_count})")
+
             return True
 
         except Exception as e:
@@ -1062,21 +1086,33 @@ class ESP01(WebServerInterface):
             # Send file header
             if isinstance(content, str):
                 size = len(content)
-                self.uart.write(f"FILE:{filename}:{size}\n".encode())
+                header = f"FILE:{filename}:{size}\n"
+                self.uart.write(header.encode())
+                if self.debug:
+                    print(f"[ESP01 TX] FILE:{filename}:{size}")
                 self.uart.write(content.encode())
+                if self.debug:
+                    print(f"[ESP01 TX] <{size} bytes of content>")
             else:
                 # Streaming mode - send chunks
-                self.uart.write(f"FILE:{filename}:0\n".encode())  # 0 = streaming
+                header = f"FILE:{filename}:0\n"
+                self.uart.write(header.encode())
+                if self.debug:
+                    print(f"[ESP01 TX] FILE:{filename}:0 (streaming)")
                 for chunk in content:
                     self.uart.write(chunk.encode() if isinstance(chunk, str) else chunk)
 
             # Send end marker
             self.uart.write(b"\nEND\n")
+            if self.debug:
+                print("[ESP01 TX] END")
             return True
 
         except Exception as e:
             # Send 404
             self.uart.write(b"404\n")
+            if self.debug:
+                print(f"[ESP01 TX] 404 (error: {e})")
             return False
 
     def get_status(self):
