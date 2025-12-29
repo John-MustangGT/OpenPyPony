@@ -28,6 +28,7 @@ files = [
     "sensors.py",
     "session.py",
     "logger.py",
+    "webpages.py",
 ]
 destination = "/"
 
