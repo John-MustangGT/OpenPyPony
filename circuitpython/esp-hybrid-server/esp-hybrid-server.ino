@@ -104,8 +104,8 @@ void setup() {
     DEBUG_SERIAL.println("USB Serial available for debugging");
     DEBUG_SERIAL.println("========================\n");
 #else
-    // Normal mode: Hardware UART for Pico @ 115200
-    PicoSerial.begin(UART_BAUD);
+    // Normal mode: Hardware UART for Pico @ 115200, 8N1 format
+    PicoSerial.begin(UART_BAUD, SERIAL_8N1);
     PicoSerial.setRxBufferSize(1024);
     delay(100);
 #endif

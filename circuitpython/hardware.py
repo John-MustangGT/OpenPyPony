@@ -128,8 +128,10 @@ class HardwareAbstractionLayer:
         # Note: Use 9600 baud for debug mode (ESP on GPIO2/0), 115200 for normal mode (ESP on GPIO1/3)
         esp_baudrate = self.config.get('webserver.baudrate', 115200)  # Default to debug mode
         try:
-            self.uart_esp = busio.UART(board.GP0, board.GP1, baudrate=esp_baudrate, timeout=0.1)
-            print(f"  ✓ UART0 initialized (GP0=TX, GP1=RX, {esp_baudrate} baud) [ESP-01]")
+            # Explicitly configure for 8N1 (8 data bits, no parity, 1 stop bit)
+            self.uart_esp = busio.UART(board.GP0, board.GP1, baudrate=esp_baudrate,
+                                       bits=8, parity=None, stop=1, timeout=0.1)
+            print(f"  ✓ UART0 initialized (GP0=TX, GP1=RX, {esp_baudrate} baud, 8N1) [ESP-01]")
         except Exception as e:
             print(f"  ✗ UART0 init failed: {e}")
 
