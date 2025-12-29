@@ -86,7 +86,7 @@ const size_t MAX_UART_LINE = 512;
 // Page serving state
 bool servingPage = false;
 AsyncWebServerRequest* currentPageRequest = nullptr;
-AsyncResponseStream* currentPageResponse = nullptr;
+String pageContentBuffer = "";  // Buffer content until ready to send
 unsigned long pageRequestTime = 0;  // Track when page request started
 const unsigned long PAGE_TIMEOUT_MS = 5000;  // 5 second timeout
 
@@ -176,7 +176,7 @@ void loop() {
         }
         servingPage = false;
         currentPageRequest = nullptr;
-        currentPageResponse = nullptr;
+        pageContentBuffer = "";
     }
 
     // Cleanup WebSocket clients
@@ -234,26 +234,33 @@ void setupWiFi() {
 
 void setupHTTPServer() {
     // Catch-all handler - forward ALL page requests to Pico
-    // This is truly async - we store the request and handle it in the main loop
+    // This is truly async - we buffer content and send when complete
     httpServer.onNotFound([](AsyncWebServerRequest *request) {
         String path = request->url();
 
         // If already serving a page, reject this request
         if (servingPage) {
-            request->send(503, "text/plain", "Server busy");
+            request->send(503, "text/plain", "Server busy - try again");
             return;
         }
 
         // Request page from Pico
         sendLine("ESP:get " + path);
 
-        // Store request for async response
+        // Store request for async response and clear buffer
         currentPageRequest = request;
         servingPage = true;
         pageRequestTime = millis();
-        currentPageResponse = request->beginResponseStream("text/html");
+        pageContentBuffer = "";
 
-        // Don't block! Response will be sent when Pico sends data
+        // Register disconnect handler to clean up if client disconnects
+        request->onDisconnect([]() {
+            servingPage = false;
+            currentPageRequest = nullptr;
+            pageContentBuffer = "";
+        });
+
+        // Don't send yet! Response will be sent when Pico sends all data
         // Main loop handles timeout checking
     });
 }
@@ -349,7 +356,7 @@ void processLine(const String& line) {
 
     // File serving: FILE:filename:size
     if (line.startsWith("FILE:")) {
-        if (!servingPage || !currentPageResponse) return;
+        if (!servingPage) return;
 
         // Parse FILE:filename:size
         int colon1 = line.indexOf(':', 5);
@@ -364,17 +371,19 @@ void processLine(const String& line) {
     }
 
     // File content or end marker
-    if (servingPage && currentPageResponse) {
+    if (servingPage) {
         if (line == "END") {
-            // Finish serving the page
-            currentPageRequest->send(currentPageResponse);
+            // Finish serving the page - send buffered content
+            if (currentPageRequest) {
+                currentPageRequest->send(200, "text/html", pageContentBuffer);
+            }
             servingPage = false;
             currentPageRequest = nullptr;
-            currentPageResponse = nullptr;
+            pageContentBuffer = "";
         } else {
-            // Content line - add to response
-            currentPageResponse->print(line);
-            currentPageResponse->print("\n");
+            // Content line - add to buffer
+            pageContentBuffer += line;
+            pageContentBuffer += "\n";
         }
         return;
     }
@@ -385,7 +394,7 @@ void processLine(const String& line) {
             currentPageRequest->send(404, "text/plain", "Not Found");
             servingPage = false;
             currentPageRequest = nullptr;
-            currentPageResponse = nullptr;
+            pageContentBuffer = "";
         }
         return;
     }
