@@ -84,3 +84,16 @@ update_rate = 5                    # Display update rate in Hz
 show_gforce = true                 # Show G-force on display
 show_gps = true                    # Show GPS status on display
 show_speed = true                  # Show speed on display
+
+# =============================================================================
+# Web Server Configuration (Optional ESP-01)
+# =============================================================================
+[webserver]
+enabled = false                    # Enable ESP-01 web server
+mode = "ap"                        # Mode: "ap" (access point) or "client"
+ssid = "OpenPonyLogger"            # AP SSID or client network name
+password = "mustanggt"             # WiFi password
+address = "192.168.4.1"            # IP address
+netmask = "255.255.255.0"          # Network mask
+gateway = "192.168.4.1"            # Gateway address
+baudrate = 9600                    # UART baudrate (9600 for debug, 115200 for normal)
