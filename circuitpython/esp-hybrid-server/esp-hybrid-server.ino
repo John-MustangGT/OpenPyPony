@@ -133,6 +133,8 @@ struct FileInfo {
 FileInfo fileList[10];  // Store up to 10 files
 int fileCount = 0;
 bool fileListReady = false;
+AsyncWebServerRequest* fileListRequest = nullptr;
+unsigned long fileListRequestTime = 0;
 
 // File download state
 bool downloadingFile = false;
@@ -140,6 +142,9 @@ String downloadFilename = "";
 uint32_t downloadSize = 0;
 String downloadBuffer = "";
 AsyncWebServerRequest* downloadRequest = nullptr;
+unsigned long downloadRequestTime = 0;
+
+const unsigned long FILE_REQUEST_TIMEOUT = 3000;  // 3 second timeout
 
 // ============================================================================
 // Setup
@@ -220,6 +225,20 @@ void loop() {
     // Process incoming UART data from Pico
     processUART();
 
+    // Check for file list request timeout
+    if (fileListRequest != nullptr && (millis() - fileListRequestTime > FILE_REQUEST_TIMEOUT)) {
+        fileListRequest->send(504, "text/plain", "Timeout - no response from logger");
+        fileListRequest = nullptr;
+    }
+
+    // Check for file download request timeout
+    if (downloadRequest != nullptr && (millis() - downloadRequestTime > FILE_REQUEST_TIMEOUT)) {
+        downloadRequest->send(504, "text/plain", "Timeout - no response from logger");
+        downloadRequest = nullptr;
+        downloadingFile = false;
+        downloadBuffer = "";
+    }
+
     // Cleanup WebSocket clients
     wsServer.cleanupClients();
 
@@ -285,31 +304,22 @@ void setupHTTPServer() {
 
     // File list API - request list from Pico and return as JSON
     httpServer.on("/api/files", HTTP_GET, [](AsyncWebServerRequest *request){
+        // If already processing a request, reject
+        if (fileListRequest != nullptr) {
+            request->send(503, "text/plain", "Busy");
+            return;
+        }
+
         // Request file list from Pico
         sendLine("ESP:list");
 
-        // Wait briefly for response (non-blocking delay with yields)
-        unsigned long start = millis();
+        // Store request for async response
+        fileListRequest = request;
+        fileListRequestTime = millis();
         fileListReady = false;
-        while (!fileListReady && (millis() - start < 1000)) {
-            processUART();
-            yield();
-            delay(1);
-        }
 
-        // Build JSON response
-        String json = "[";
-        for (int i = 0; i < fileCount; i++) {
-            if (i > 0) json += ",";
-            json += "{";
-            json += "\"filename\":\"" + fileList[i].filename + "\",";
-            json += "\"size\":" + String(fileList[i].size) + ",";
-            json += "\"session\":" + String(fileList[i].session_num);
-            json += "}";
-        }
-        json += "]";
-
-        request->send(200, "application/json", json);
+        // Response will be sent when FILELIST arrives from Pico
+        // Handled in processLine() when END marker received
     });
 
     // File download API - request file from Pico and stream to browser
@@ -326,12 +336,13 @@ void setupHTTPServer() {
 
         // Store request for async response
         downloadRequest = request;
+        downloadRequestTime = millis();
         downloadingFile = true;
         downloadFilename = filename;
         downloadBuffer = "";
 
         // Response will be sent when file arrives from Pico
-        // Handled in processLine() when DOWNLOAD message received
+        // Handled in processUART() when binary file data received
     });
 
     // 404 handler
@@ -480,10 +491,25 @@ void processLine(const String& line) {
 
     // File list end marker
     if (line == "END") {
-        if (fileCount > 0) {
+        // If we have a file list request pending, send the response
+        if (fileListRequest != nullptr && fileCount >= 0) {
+            // Build JSON response
+            String json = "[";
+            for (int i = 0; i < fileCount; i++) {
+                if (i > 0) json += ",";
+                json += "{";
+                json += "\"filename\":\"" + fileList[i].filename + "\",";
+                json += "\"size\":" + String(fileList[i].size) + ",";
+                json += "\"session\":" + String(fileList[i].session_num);
+                json += "}";
+            }
+            json += "]";
+
+            fileListRequest->send(200, "application/json", json);
+            fileListRequest = nullptr;
             fileListReady = true;
         }
-        // Also end of config or file download
+        // Also end of config
         configReceived = true;
         return;
     }
