@@ -891,10 +891,20 @@ class ESP01(WebServerInterface):
         self.reset_pin.value = True
         time.sleep(0.5)  # Wait for ESP to boot
 
+        # Clear UART buffer of boot ROM garbage (ESP outputs at 74880 baud during boot)
+        # This prevents the buffer from filling with noise before we get to valid commands
+        if self.uart.in_waiting:
+            discarded = self.uart.read(self.uart.in_waiting)
+            if self.debug:
+                print(f"[ESP01] Flushed {len(discarded)} bytes of boot ROM output")
+
+        # Clear internal line buffer
+        self._rx_pos = 0
+
         self._ready = False
         self._config_sent = False
 
-        print("[ESP01] Reset complete")
+        print("[ESP01] Reset complete, buffer cleared")
         return True
 
     def is_ready(self):
