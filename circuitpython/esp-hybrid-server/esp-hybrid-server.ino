@@ -32,7 +32,7 @@
 // ============================================================================
 
 // Set to 1 for debug mode (GPIO2/0 @ 9600), 0 for normal mode (GPIO1/3 @ 115200)
-#define DEBUG_MODE 1
+#define DEBUG_MODE 0
 
 #if DEBUG_MODE
   // Debug mode: Software Serial on GPIO2(TX) and GPIO0(RX) @ 9600 baud
@@ -392,6 +392,8 @@ void sendLine(const String& line) {
 }
 
 void requestConfig() {
+    delay(100);
+    sendLine("+++");
     sendLine("ESP:config");
 }
 

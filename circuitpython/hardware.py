@@ -126,7 +126,7 @@ class HardwareAbstractionLayer:
 
         # UART0 for ESP-01 (GP0=TX, GP1=RX)
         # Note: Use 9600 baud for debug mode (ESP on GPIO2/0), 115200 for normal mode (ESP on GPIO1/3)
-        esp_baudrate = self.config.get('webserver.baudrate', 9600)  # Default to debug mode
+        esp_baudrate = self.config.get('webserver.baudrate', 115200)  # Default to debug mode
         try:
             self.uart_esp = busio.UART(board.GP0, board.GP1, baudrate=esp_baudrate, timeout=0.1)
             print(f"  ✓ UART0 initialized (GP0=TX, GP1=RX, {esp_baudrate} baud) [ESP-01]")
@@ -300,7 +300,7 @@ class HardwareAbstractionLayer:
         try:
             # Create ESP-01 instance with reset pin
             reset_pin = digitalio.DigitalInOut(board.GP6)
-            self._webserver = ESP01(self.uart_esp, reset_pin)
+            self._webserver = ESP01(self.uart_esp, reset_pin, debug=False)
 
             # Reset the ESP
             self._webserver.reset()
