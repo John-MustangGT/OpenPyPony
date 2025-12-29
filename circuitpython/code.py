@@ -9,6 +9,7 @@ from config import Config
 from hardware import HardwareAbstractionLayer
 from session import SessionManager
 from logger import create_logger
+from webpages import get_page
 
 # Version information
 VERSION = "2.0.0-alpha"
@@ -133,10 +134,12 @@ print("="*60 + "\n")
 
 # Get sensor interfaces
 accel = hal.get_accelerometer()
+webserver = hal.get_webserver()
 
 # Main loop
 loop_count = 0
 last_display_update = 0
+last_telemetry_send = 0
 session_start_time = time.monotonic()
 
 # Exponential Moving Average state for display smoothing
@@ -149,6 +152,30 @@ ema_gz = 1.0
 try:
     while True:
         current_time = time.monotonic()
+
+        # Handle web server requests (page requests from ESP-01)
+        if webserver:
+            req_type, req_data = webserver.update()
+            if req_type == 'page_request':
+                page_content = get_page(req_data)
+                if page_content:
+                    webserver.serve_file(req_data, page_content)
+                    print(f"[Web] Served: {req_data}")
+                else:
+                    webserver.serve_file(req_data, get_page('/404.html'))
+                    print(f"[Web] 404: {req_data}")
+            elif req_type == 'config_request':
+                # Re-send config if ESP restarted
+                config_dict = {
+                    'mode': hal.config.get('webserver.mode', 'ap'),
+                    'ssid': hal.config.get('webserver.ssid', 'OpenPonyLogger'),
+                    'password': hal.config.get('webserver.password', 'mustanggt'),
+                    'address': hal.config.get('webserver.address', '192.168.4.1'),
+                    'netmask': hal.config.get('webserver.netmask', '255.255.255.0'),
+                    'gateway': hal.config.get('webserver.gateway', '192.168.4.1')
+                }
+                webserver.send_config(config_dict)
+                print("[Web] Re-sent config to ESP")
 
         # Update GPS
         gps.update()
@@ -214,6 +241,23 @@ try:
             # Update display labels with SMOOTHED G-forces (no clear/redraw!)
             display.update_main_display(gps_data, accel_data_smoothed, session_info)
             last_display_update = current_time
+
+        # Stream telemetry to web server (10Hz) - send SMOOTHED G-forces for display
+        if webserver and (current_time - last_telemetry_send) >= 0.1:
+            telemetry = {
+                'lat': gps_data['lat'],
+                'lon': gps_data['lon'],
+                'alt': gps_data['alt'],
+                'speed': gps_data['speed'] * 2.237,  # Convert m/s to MPH for display
+                'satellites': gps_data['satellites'],
+                'fix_type': gps_data['fix_type'],
+                'hdop': gps_data['hdop'],
+                'gx': accel_data_smoothed['gx'],
+                'gy': accel_data_smoothed['gy'],
+                'gz': accel_data_smoothed['gz']
+            }
+            webserver.stream_telemetry(telemetry)
+            last_telemetry_send = current_time
 
         loop_count += 1
         time.sleep(0.1)  # 10Hz main loop

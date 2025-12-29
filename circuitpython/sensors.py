@@ -204,6 +204,85 @@ class StorageInterface:
         raise NotImplementedError("Subclass must implement get_free_space()")
 
 
+class WebServerInterface:
+    """Base interface for web server (ESP-01)"""
+
+    def reset(self):
+        """
+        Reset the ESP module
+
+        Returns:
+            bool: True if successful
+        """
+        raise NotImplementedError("Subclass must implement reset()")
+
+    def is_ready(self):
+        """
+        Check if ESP is ready to serve
+
+        Returns:
+            bool: True if serving
+        """
+        raise NotImplementedError("Subclass must implement is_ready()")
+
+    def send_config(self, config_dict):
+        """
+        Send configuration to ESP
+
+        Args:
+            config_dict: Configuration parameters (mode, ssid, password, etc.)
+
+        Returns:
+            bool: True if accepted
+        """
+        raise NotImplementedError("Subclass must implement send_config()")
+
+    def update(self):
+        """
+        Process incoming requests from ESP
+
+        Should be called frequently in main loop
+
+        Returns:
+            tuple: (request_type, request_data) or (None, None)
+        """
+        raise NotImplementedError("Subclass must implement update()")
+
+    def stream_telemetry(self, data):
+        """
+        Stream telemetry data to websockets
+
+        Args:
+            data: Telemetry data dict to send
+
+        Returns:
+            bool: True if sent
+        """
+        raise NotImplementedError("Subclass must implement stream_telemetry()")
+
+    def serve_file(self, filename, content):
+        """
+        Serve file content in response to page request
+
+        Args:
+            filename: Requested file name
+            content: File content (can be generator for streaming)
+
+        Returns:
+            bool: True if sent
+        """
+        raise NotImplementedError("Subclass must implement serve_file()")
+
+    def get_status(self):
+        """
+        Get server status
+
+        Returns:
+            dict: Status info (clients connected, uptime, etc.)
+        """
+        raise NotImplementedError("Subclass must implement get_status()")
+
+
 # =============================================================================
 # Concrete Implementations
 # =============================================================================
@@ -769,6 +848,242 @@ class SDCard(StorageInterface):
             return 0
 
 
+class ESP01(WebServerInterface):
+    """ESP-01 WiFi web server implementation"""
+
+    def __init__(self, uart, reset_pin):
+        """
+        Initialize ESP-01
+
+        Args:
+            uart: UART object connected to ESP-01
+            reset_pin: DigitalInOut pin for ESP reset (GP6)
+        """
+        self.uart = uart
+        self.reset_pin = reset_pin
+        self._ready = False
+        self._rx_buffer = bytearray(512)
+        self._rx_pos = 0
+        self._status = {'clients': 0, 'uptime': 0, 'mode': 'unknown'}
+        self._last_status_time = 0
+        self._config_sent = False
+
+        print("[ESP01] Initialized (115200 baud)")
+
+    def reset(self):
+        """Reset ESP-01 module via hardware pin"""
+        import digitalio
+
+        print("[ESP01] Resetting...")
+
+        # Configure reset pin as output
+        self.reset_pin.direction = digitalio.Direction.OUTPUT
+
+        # Pulse reset low for 100ms
+        self.reset_pin.value = False
+        time.sleep(0.1)
+        self.reset_pin.value = True
+        time.sleep(0.5)  # Wait for ESP to boot
+
+        self._ready = False
+        self._config_sent = False
+
+        print("[ESP01] Reset complete")
+        return True
+
+    def is_ready(self):
+        """Check if ESP is ready to serve"""
+        return self._ready
+
+    def send_config(self, config_dict):
+        """
+        Send configuration to ESP
+
+        Args:
+            config_dict: {
+                'mode': 'ap' or 'sta',
+                'ssid': 'network name',
+                'password': 'password',
+                'address': '192.168.4.1',
+                'netmask': '255.255.255.0',
+                'gateway': '192.168.4.1'
+            }
+        """
+        print("[ESP01] Sending config...")
+
+        # Send configuration as simple key=value lines
+        try:
+            self.uart.write(b'CONFIG\n')
+
+            for key, value in config_dict.items():
+                line = f"{key}={value}\n"
+                self.uart.write(line.encode())
+
+            self.uart.write(b'END\n')
+
+            self._config_sent = True
+            print("[ESP01] Config sent")
+            return True
+
+        except Exception as e:
+            print(f"[ESP01] Config send failed: {e}")
+            return False
+
+    def update(self):
+        """
+        Process incoming messages from ESP
+
+        Returns:
+            tuple: (request_type, request_data) or (None, None)
+        """
+        # Read available data into buffer
+        if self.uart.in_waiting:
+            try:
+                chunk = self.uart.read(min(self.uart.in_waiting, 256))
+                if chunk:
+                    for byte in chunk:
+                        if byte == ord('\n'):
+                            # Process complete line
+                            line = bytes(self._rx_buffer[:self._rx_pos]).decode('utf-8', 'ignore').strip()
+                            self._rx_pos = 0
+
+                            # Process the line
+                            result = self._process_line(line)
+                            if result:
+                                return result
+                        else:
+                            # Add to buffer if space available
+                            if self._rx_pos < len(self._rx_buffer) - 1:
+                                self._rx_buffer[self._rx_pos] = byte
+                                self._rx_pos += 1
+                            else:
+                                # Buffer overflow - reset
+                                self._rx_pos = 0
+            except Exception as e:
+                # Ignore UART errors
+                pass
+
+        return (None, None)
+
+    def _process_line(self, line):
+        """
+        Process a line received from ESP
+
+        Returns:
+            tuple: (request_type, request_data) or None
+        """
+        if not line:
+            return None
+
+        # ESP requesting config
+        if line == 'ESP:config':
+            print("[ESP01] Config requested")
+            self._ready = False
+            self._config_sent = False
+            return ('config_request', None)
+
+        # ESP is now serving
+        elif line == 'ESP:serving':
+            print("[ESP01] Now serving")
+            self._ready = True
+            return None
+
+        # Status update: "ESP:status clients=2 uptime=3600"
+        elif line.startswith('ESP:status'):
+            parts = line.split()
+            for part in parts[1:]:
+                if '=' in part:
+                    key, value = part.split('=', 1)
+                    try:
+                        self._status[key] = int(value) if value.isdigit() else value
+                    except:
+                        self._status[key] = value
+            self._last_status_time = time.monotonic()
+            return None
+
+        # Page request: "ESP:get /index.html"
+        elif line.startswith('ESP:get'):
+            filename = line.split()[1] if len(line.split()) > 1 else '/'
+            print(f"[ESP01] Page request: {filename}")
+            return ('page_request', filename)
+
+        # Unknown message
+        else:
+            return None
+
+    def stream_telemetry(self, data):
+        """
+        Stream telemetry data to websockets
+
+        Args:
+            data: Dict with telemetry data
+
+        Returns:
+            bool: True if sent
+        """
+        if not self._ready:
+            return False
+
+        try:
+            # Format as JSON-like string
+            # Keep it simple for CircuitPython
+            msg = "WS:{"
+            pairs = []
+
+            for key, value in data.items():
+                if isinstance(value, float):
+                    pairs.append(f'"{key}":{value:.6f}')
+                elif isinstance(value, int):
+                    pairs.append(f'"{key}":{value}')
+                elif isinstance(value, str):
+                    pairs.append(f'"{key}":"{value}"')
+
+            msg += ','.join(pairs)
+            msg += "}\n"
+
+            self.uart.write(msg.encode())
+            return True
+
+        except Exception as e:
+            return False
+
+    def serve_file(self, filename, content):
+        """
+        Serve file content to ESP
+
+        Args:
+            filename: Requested filename
+            content: String content or iterable of chunks
+
+        Returns:
+            bool: True if sent
+        """
+        try:
+            # Send file header
+            if isinstance(content, str):
+                size = len(content)
+                self.uart.write(f"FILE:{filename}:{size}\n".encode())
+                self.uart.write(content.encode())
+            else:
+                # Streaming mode - send chunks
+                self.uart.write(f"FILE:{filename}:0\n".encode())  # 0 = streaming
+                for chunk in content:
+                    self.uart.write(chunk.encode() if isinstance(chunk, str) else chunk)
+
+            # Send end marker
+            self.uart.write(b"\nEND\n")
+            return True
+
+        except Exception as e:
+            # Send 404
+            self.uart.write(b"404\n")
+            return False
+
+    def get_status(self):
+        """Get server status"""
+        return self._status.copy()
+
+
 # =============================================================================
 # Null/Stub Implementations (for disabled hardware)
 # =============================================================================
@@ -806,6 +1121,15 @@ class NullGPS(GPSInterface):
     
     def get_satellites(self):
         return 0
+
+    def get_fix_quality(self):
+        return 0
+
+    def get_fix_type(self):
+        return 'No Fix'
+
+    def get_hdop(self):
+        return None
 
 
 class NullDisplay(DisplayInterface):
