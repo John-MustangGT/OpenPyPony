@@ -51,6 +51,40 @@
 #endif
 
 // ============================================================================
+// Embedded HTML Page (PROGMEM saves RAM)
+// ============================================================================
+
+const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>OpenPony Logger</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#1a1a1a;color:#e0e0e0;padding:20px}.header{text-align:center;margin-bottom:20px;padding:20px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:10px}.header h1{color:white;font-size:2em}.status{text-align:center;padding:10px;margin-bottom:20px;border-radius:5px;font-weight:bold}.status.connected{background:#2d5016;color:#7dff7d}.status.disconnected{background:#501616;color:#ff7d7d}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}.card{background:#2a2a2a;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.3)}.card h2{color:#667eea;font-size:1.2em;margin-bottom:15px;border-bottom:2px solid #667eea;padding-bottom:8px}.large-value{font-size:3em;text-align:center;font-weight:bold;color:#667eea;margin:20px 0;font-family:'Courier New',monospace}.metric{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #3a3a3a}.metric-label{color:#999;font-size:0.9em}.metric-value{color:#e0e0e0;font-weight:bold;font-family:'Courier New',monospace}</style></head><body>
+<div class="header"><h1>🏎️ OpenPony Logger</h1></div>
+<div id="status" class="status disconnected">Connecting...</div>
+<div class="grid">
+<div class="card"><h2>Speed</h2><div class="large-value" id="speed">0.0</div><div style="text-align:center;color:#999">MPH</div></div>
+<div class="card"><h2>GPS</h2>
+<div class="metric"><span class="metric-label">Lat</span><span class="metric-value" id="lat">--</span></div>
+<div class="metric"><span class="metric-label">Lon</span><span class="metric-value" id="lon">--</span></div>
+<div class="metric"><span class="metric-label">Sats</span><span class="metric-value" id="sats">0</span></div></div>
+<div class="card"><h2>G-Forces</h2>
+<div class="metric"><span class="metric-label">X</span><span class="metric-value" id="gx">+0.0</span></div>
+<div class="metric"><span class="metric-label">Y</span><span class="metric-value" id="gy">+0.0</span></div>
+<div class="metric"><span class="metric-label">Z</span><span class="metric-value" id="gz">+1.0</span></div></div>
+</div><script>
+let ws=new WebSocket('ws://'+window.location.hostname+'/ws');
+ws.onopen=()=>{document.getElementById('status').textContent='Connected';document.getElementById('status').className='status connected'};
+ws.onmessage=(e)=>{const d=JSON.parse(e.data);
+if(d.speed)document.getElementById('speed').textContent=d.speed.toFixed(1);
+if(d.lat)document.getElementById('lat').textContent=d.lat.toFixed(6);
+if(d.lon)document.getElementById('lon').textContent=d.lon.toFixed(6);
+if(d.satellites)document.getElementById('sats').textContent=d.satellites;
+if(d.gx)document.getElementById('gx').textContent=(d.gx>=0?'+':'')+d.gx.toFixed(2);
+if(d.gy)document.getElementById('gy').textContent=(d.gy>=0?'+':'')+d.gy.toFixed(2);
+if(d.gz)document.getElementById('gz').textContent=(d.gz>=0?'+':'')+d.gz.toFixed(2)};
+ws.onclose=()=>{document.getElementById('status').textContent='Disconnected';document.getElementById('status').className='status disconnected';setTimeout(()=>location.reload(),2000)};
+</script></body></html>
+)rawliteral";
+
+// ============================================================================
 // Configuration
 // ============================================================================
 
@@ -82,12 +116,6 @@ unsigned long lastStatusTime = 0;
 // Incoming line buffer from Pico
 String uartLineBuffer = "";
 const size_t MAX_UART_LINE = 512;
-
-// Page serving state
-bool servingPage = false;
-String pageBuffer = "";  // Buffer for page content
-unsigned long pageRequestStartTime = 0;
-const unsigned long PAGE_TIMEOUT_MS = 5000;
 
 // ============================================================================
 // Setup
@@ -222,43 +250,18 @@ void setupWiFi() {
 // ============================================================================
 
 void setupHTTPServer() {
-    // Catch-all handler - forward page requests to Pico and wait for response
-    httpServer.onNotFound([](AsyncWebServerRequest *request) {
-        String path = request->url();
+    // Serve static HTML page from PROGMEM (completely non-blocking)
+    httpServer.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html", INDEX_HTML);
+    });
 
-        // If already serving a page, reject
-        if (servingPage) {
-            request->send(503, "text/plain", "Server busy");
-            return;
-        }
+    httpServer.on("/index.html", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send_P(200, "text/html", INDEX_HTML);
+    });
 
-        // Set up for receiving page content
-        servingPage = true;
-        pageBuffer = "";
-        pageRequestStartTime = millis();
-
-        // Request page from Pico
-        sendLine("ESP:get " + path);
-
-        // Wait for response (with frequent yields to avoid watchdog)
-        while (servingPage && (millis() - pageRequestStartTime < PAGE_TIMEOUT_MS)) {
-            processUART();
-            yield();  // Feed watchdog
-            delay(1);  // Small delay to prevent tight loop
-        }
-
-        // Send response
-        if (!servingPage && pageBuffer.length() > 0) {
-            // Content received successfully
-            request->send(200, "text/html", pageBuffer);
-        } else {
-            // Timeout or no content
-            request->send(504, "text/plain", "Timeout waiting for content");
-        }
-
-        // Clean up
-        servingPage = false;
-        pageBuffer = "";
+    // 404 handler
+    httpServer.onNotFound([](AsyncWebServerRequest *request){
+        request->send(404, "text/plain", "Not Found");
     });
 }
 
@@ -351,32 +354,8 @@ void processLine(const String& line) {
         return;
     }
 
-    // File serving: FILE:filename:size
-    if (line.startsWith("FILE:")) {
-        if (!servingPage) return;
-        // Just acknowledge - we'll buffer the content
-        return;
-    }
-
-    // File content or end marker
-    if (servingPage) {
-        if (line == "END") {
-            // Content complete - handler will send it
-            servingPage = false;
-        } else {
-            // Buffer content line
-            pageBuffer += line;
-            pageBuffer += "\n";
-        }
-        return;
-    }
-
-    // 404 Not Found
-    if (line == "404") {
-        if (servingPage) {
-            pageBuffer = "";  // Clear buffer to indicate 404
-            servingPage = false;
-        }
+    // Ignore page serving messages (HTML is now static on ESP)
+    if (line.startsWith("FILE:") || line.startsWith("ESP:get") || line == "END" || line == "404") {
         return;
     }
 }
