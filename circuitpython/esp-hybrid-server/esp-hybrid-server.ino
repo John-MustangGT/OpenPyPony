@@ -56,8 +56,8 @@
 
 const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>OpenPony Logger</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#1a1a1a;color:#e0e0e0;padding:20px}.header{text-align:center;margin-bottom:20px;padding:20px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:10px}.header h1{color:white;font-size:2em}.status{text-align:center;padding:10px;margin-bottom:20px;border-radius:5px;font-weight:bold}.status.connected{background:#2d5016;color:#7dff7d}.status.disconnected{background:#501616;color:#ff7d7d}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}.card{background:#2a2a2a;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.3)}.card h2{color:#667eea;font-size:1.2em;margin-bottom:15px;border-bottom:2px solid #667eea;padding-bottom:8px}.large-value{font-size:3em;text-align:center;font-weight:bold;color:#667eea;margin:20px 0;font-family:'Courier New',monospace}.metric{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #3a3a3a}.metric-label{color:#999;font-size:0.9em}.metric-value{color:#e0e0e0;font-weight:bold;font-family:'Courier New',monospace}</style></head><body>
-<div class="header"><h1>🏎️ OpenPony Logger</h1></div>
+<title>OpenPony Logger</title><style>*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:#1a1a1a;color:#e0e0e0;padding:20px}.header{text-align:center;margin-bottom:20px;padding:20px;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);border-radius:10px}.header h1{color:white;font-size:2em}.header .time{color:rgba(255,255,255,0.8);font-size:0.9em;margin-top:5px;font-family:'Courier New',monospace}.status{text-align:center;padding:10px;margin-bottom:20px;border-radius:5px;font-weight:bold}.status.connected{background:#2d5016;color:#7dff7d}.status.disconnected{background:#501616;color:#ff7d7d}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px}.card{background:#2a2a2a;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,0.3)}.card h2{color:#667eea;font-size:1.2em;margin-bottom:15px;border-bottom:2px solid #667eea;padding-bottom:8px}.large-value{font-size:3em;text-align:center;font-weight:bold;color:#667eea;margin:20px 0;font-family:'Courier New',monospace}.metric{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid #3a3a3a}.metric-label{color:#999;font-size:0.9em}.metric-value{color:#e0e0e0;font-weight:bold;font-family:'Courier New',monospace}</style></head><body>
+<div class="header"><h1>🏎️ OpenPony Logger</h1><div class="time" id="time">--</div></div>
 <div id="status" class="status disconnected">Connecting...</div>
 <div class="grid">
 <div class="card"><h2>Speed</h2><div class="large-value" id="speed">0.0</div><div style="text-align:center;color:#999">MPH</div></div>
@@ -73,6 +73,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 let ws=new WebSocket('ws://'+window.location.hostname+'/ws');
 ws.onopen=()=>{document.getElementById('status').textContent='Connected';document.getElementById('status').className='status connected'};
 ws.onmessage=(e)=>{const d=JSON.parse(e.data);
+if(d.timestamp){const date=new Date(d.timestamp*1000);document.getElementById('time').textContent=date.toLocaleString()}
 if(d.speed)document.getElementById('speed').textContent=d.speed.toFixed(1);
 if(d.lat)document.getElementById('lat').textContent=d.lat.toFixed(6);
 if(d.lon)document.getElementById('lon').textContent=d.lon.toFixed(6);

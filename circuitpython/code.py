@@ -244,7 +244,21 @@ try:
 
         # Stream telemetry to web server (10Hz) - send SMOOTHED G-forces for display
         if webserver and (current_time - last_telemetry_send) >= 0.1:
+            # Get GPS timestamp (UTC) and convert to Unix timestamp
+            gps_time = gps.get_time()
+            if gps_time:
+                # Convert struct_time to Unix timestamp (seconds since epoch)
+                # struct_time: (year, month, day, hour, minute, second, weekday, yearday, isdst)
+                import time as time_module
+                try:
+                    timestamp = time_module.mktime(gps_time)
+                except:
+                    timestamp = 0
+            else:
+                timestamp = 0
+
             telemetry = {
+                'timestamp': int(timestamp),  # Unix timestamp (UTC)
                 'lat': gps_data['lat'],
                 'lon': gps_data['lon'],
                 'alt': gps_data['alt'],
