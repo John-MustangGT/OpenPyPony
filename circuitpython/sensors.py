@@ -301,20 +301,25 @@ class ATGM336H(GPSInterface):
     def update(self):
         """
         Update GPS data
-        
+
         Returns:
             bool: True if new valid data received
         """
-        # Update GPS data
-        self.gps.update()
-        
+        # Update GPS data (with error handling for malformed NMEA sentences)
+        try:
+            self.gps.update()
+        except (ValueError, RuntimeError) as e:
+            # GPS occasionally sends malformed NMEA data - ignore and continue
+            # This prevents crashes during track sessions from corrupted sentences
+            return False
+
         # Check if we have new data
         if self.gps.has_fix:
             current_time = time.monotonic()
             if current_time - self._last_update >= 0.1:  # Throttle updates
                 self._last_update = current_time
                 return True
-        
+
         return False
     
     def has_fix(self):
