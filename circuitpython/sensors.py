@@ -890,9 +890,10 @@ class ESP01(WebServerInterface):
         time.sleep(0.1)
         self.reset_pin.value = True
 
-        # Wait for ESP to boot and scan for sync marker (+++\n)
+        # Wait for ESP to boot and scan for sync marker (+++)
         # This skips all boot ROM garbage (output at 74880 baud) until we see
         # the sync marker sent by the ESP at the correct baudrate
+        # Classic Hayes modem style - just the three plus signs
         print("[ESP01] Waiting for sync marker (+++)")
         sync_buffer = bytearray()
         sync_timeout = 5.0
@@ -906,12 +907,12 @@ class ESP01(WebServerInterface):
                     bytes_discarded += 1
                     sync_buffer.append(byte[0])
 
-                    # Keep only last 4 bytes in buffer (looking for "+++\n")
-                    if len(sync_buffer) > 4:
-                        sync_buffer = sync_buffer[-4:]  # CircuitPython doesn't support pop(0)
+                    # Keep only last 3 bytes in buffer (looking for "+++")
+                    if len(sync_buffer) > 3:
+                        sync_buffer = sync_buffer[-3:]  # CircuitPython doesn't support pop(0)
 
-                    # Check for sync marker: +++\n (0x2B 0x2B 0x2B 0x0A)
-                    if len(sync_buffer) >= 4 and sync_buffer[-4:] == b'+++\n':
+                    # Check for sync marker: +++ (0x2B 0x2B 0x2B)
+                    if len(sync_buffer) >= 3 and sync_buffer[-3:] == b'+++':
                         if self.debug:
                             print(f"[ESP01] Sync marker found! Discarded {bytes_discarded} bytes of boot output")
                         break
