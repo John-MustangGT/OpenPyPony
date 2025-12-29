@@ -187,7 +187,7 @@ INDEX_HTML = """<!DOCTYPE html>
         let reconnectInterval = null;
 
         function connect() {
-            ws = new WebSocket('ws://' + window.location.hostname + ':81/');
+            ws = new WebSocket('ws://' + window.location.hostname + '/ws');
 
             ws.onopen = function() {
                 console.log('WebSocket connected');

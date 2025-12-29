@@ -85,10 +85,9 @@ const size_t MAX_UART_LINE = 512;
 
 // Page serving state
 bool servingPage = false;
-AsyncWebServerRequest* currentPageRequest = nullptr;
-AsyncResponseStream* currentPageResponse = nullptr;  // Stream response
-unsigned long pageRequestTime = 0;  // Track when page request started
-const unsigned long PAGE_TIMEOUT_MS = 5000;  // 5 second timeout
+String pageBuffer = "";  // Buffer for page content
+unsigned long pageRequestStartTime = 0;
+const unsigned long PAGE_TIMEOUT_MS = 5000;
 
 // ============================================================================
 // Setup
@@ -169,16 +168,6 @@ void loop() {
     // Process incoming UART data from Pico
     processUART();
 
-    // Check for page request timeout
-    if (servingPage && (millis() - pageRequestTime > PAGE_TIMEOUT_MS)) {
-        if (currentPageRequest) {
-            currentPageRequest->send(504, "text/plain", "Gateway timeout - no response from logger");
-        }
-        servingPage = false;
-        currentPageRequest = nullptr;
-        currentPageResponse = nullptr;
-    }
-
     // Cleanup WebSocket clients
     wsServer.cleanupClients();
 
@@ -233,29 +222,43 @@ void setupWiFi() {
 // ============================================================================
 
 void setupHTTPServer() {
-    // Catch-all handler - forward ALL page requests to Pico
-    // Create response stream and fill it as data arrives from Pico
+    // Catch-all handler - forward page requests to Pico and wait for response
     httpServer.onNotFound([](AsyncWebServerRequest *request) {
         String path = request->url();
 
-        // If already serving a page, reject this request
+        // If already serving a page, reject
         if (servingPage) {
-            request->send(503, "text/plain", "Server busy - try again");
+            request->send(503, "text/plain", "Server busy");
             return;
         }
+
+        // Set up for receiving page content
+        servingPage = true;
+        pageBuffer = "";
+        pageRequestStartTime = millis();
 
         // Request page from Pico
         sendLine("ESP:get " + path);
 
-        // Create chunked response stream immediately
-        // This keeps the connection open and allows us to write data as it arrives
-        currentPageResponse = request->beginResponseStream("text/html");
-        currentPageRequest = request;
-        servingPage = true;
-        pageRequestTime = millis();
+        // Wait for response (with frequent yields to avoid watchdog)
+        while (servingPage && (millis() - pageRequestStartTime < PAGE_TIMEOUT_MS)) {
+            processUART();
+            yield();  // Feed watchdog
+            delay(1);  // Small delay to prevent tight loop
+        }
 
-        // Don't send yet! We'll write to the stream as data arrives,
-        // then send when we receive END marker
+        // Send response
+        if (!servingPage && pageBuffer.length() > 0) {
+            // Content received successfully
+            request->send(200, "text/html", pageBuffer);
+        } else {
+            // Timeout or no content
+            request->send(504, "text/plain", "Timeout waiting for content");
+        }
+
+        // Clean up
+        servingPage = false;
+        pageBuffer = "";
     });
 }
 
@@ -350,59 +353,29 @@ void processLine(const String& line) {
 
     // File serving: FILE:filename:size
     if (line.startsWith("FILE:")) {
-        if (!servingPage || !currentPageResponse) return;
-
-        // Parse FILE:filename:size (currently unused - we stream content as it arrives)
-        int colon1 = line.indexOf(':', 5);
-        if (colon1 < 0) return;
-
-        String filename = line.substring(5, colon1);
-        int size = line.substring(colon1 + 1).toInt();
-
-#if DEBUG_MODE
-        DEBUG_SERIAL.print("[HTTP] Receiving file: ");
-        DEBUG_SERIAL.print(filename);
-        DEBUG_SERIAL.print(" (");
-        DEBUG_SERIAL.print(size);
-        DEBUG_SERIAL.println(" bytes)");
-#endif
-
-        // Size will be followed by content and END marker
-        // Content will be written to currentPageResponse as it arrives
+        if (!servingPage) return;
+        // Just acknowledge - we'll buffer the content
         return;
     }
 
     // File content or end marker
-    if (servingPage && currentPageResponse) {
+    if (servingPage) {
         if (line == "END") {
-#if DEBUG_MODE
-            DEBUG_SERIAL.println("[HTTP] Sending response...");
-#endif
-            // Finish serving the page - send the response stream
-            if (currentPageRequest && currentPageResponse) {
-                currentPageRequest->send(currentPageResponse);
-#if DEBUG_MODE
-                DEBUG_SERIAL.println("[HTTP] Response sent");
-#endif
-            }
+            // Content complete - handler will send it
             servingPage = false;
-            currentPageRequest = nullptr;
-            currentPageResponse = nullptr;
         } else {
-            // Content line - write to response stream
-            currentPageResponse->print(line);
-            currentPageResponse->print("\n");
+            // Buffer content line
+            pageBuffer += line;
+            pageBuffer += "\n";
         }
         return;
     }
 
     // 404 Not Found
     if (line == "404") {
-        if (servingPage && currentPageRequest) {
-            currentPageRequest->send(404, "text/plain", "Not Found");
+        if (servingPage) {
+            pageBuffer = "";  // Clear buffer to indicate 404
             servingPage = false;
-            currentPageRequest = nullptr;
-            currentPageResponse = nullptr;
         }
         return;
     }
