@@ -97,18 +97,21 @@ class BinaryLogger:
         
         # Driver name
         driver = self.config.get('general.Driver_name', 'Unknown')[:31]
-        header_data[offset:offset+32] = driver.encode('utf-8').ljust(32, b'\x00')
+        driver_bytes = (driver.encode('utf-8') + b'\x00' * 32)[:32]
+        header_data[offset:offset+32] = driver_bytes
         offset += 32
-        
+
         # Vehicle ID
         vehicle = self.config.get('general.Vehicle_id', 'Unknown')[:31]
-        header_data[offset:offset+32] = vehicle.encode('utf-8').ljust(32, b'\x00')
+        vehicle_bytes = (vehicle.encode('utf-8') + b'\x00' * 32)[:32]
+        header_data[offset:offset+32] = vehicle_bytes
         offset += 32
-        
+
         # Profile name
         profile = self.config.active_profile or 'default'
         profile = profile.split('.')[-1][:31]  # Get last part of 'general.daily'
-        header_data[offset:offset+32] = profile.encode('utf-8').ljust(32, b'\x00')
+        profile_bytes = (profile.encode('utf-8') + b'\x00' * 32)[:32]
+        header_data[offset:offset+32] = profile_bytes
         offset += 32
         
         # Reserved space (for future use)
@@ -137,27 +140,48 @@ class BinaryLogger:
         
         # Hardware name
         hw_name = self.config.get('hardware.name', 'OpenPonyLogger')[:63]
-        header_data[offset:offset+64] = hw_name.encode('utf-8').ljust(64, b'\x00')
+        hw_bytes = (hw_name.encode('utf-8') + b'\x00' * 64)[:64]
+        header_data[offset:offset+64] = hw_bytes
         offset += 64
-        
+
         # Accelerometer
-        accel_info = self.manifest.get('accelerometer', 'None')[:63]
-        header_data[offset:offset+64] = accel_info.encode('utf-8').ljust(64, b'\x00')
+        accel_info = self.manifest.get('accelerometer', 'None')
+        if accel_info:
+            accel_info = str(accel_info)[:63]
+        else:
+            accel_info = 'None'
+        accel_bytes = (accel_info.encode('utf-8') + b'\x00' * 64)[:64]
+        header_data[offset:offset+64] = accel_bytes
         offset += 64
-        
+
         # GPS
-        gps_info = self.manifest.get('gps', 'None')[:63]
-        header_data[offset:offset+64] = gps_info.encode('utf-8').ljust(64, b'\x00')
+        gps_info = self.manifest.get('gps', 'None')
+        if gps_info:
+            gps_info = str(gps_info)[:63]
+        else:
+            gps_info = 'None'
+        gps_bytes = (gps_info.encode('utf-8') + b'\x00' * 64)[:64]
+        header_data[offset:offset+64] = gps_bytes
         offset += 64
-        
+
         # RTC
-        rtc_info = self.manifest.get('rtc', 'None')[:31]
-        header_data[offset:offset+32] = rtc_info.encode('utf-8').ljust(32, b'\x00')
+        rtc_info = self.manifest.get('rtc', 'None')
+        if rtc_info:
+            rtc_info = str(rtc_info)[:31]
+        else:
+            rtc_info = 'None'
+        rtc_bytes = (rtc_info.encode('utf-8') + b'\x00' * 32)[:32]
+        header_data[offset:offset+32] = rtc_bytes
         offset += 32
-        
+
         # Display
-        display_info = self.manifest.get('display', 'None')[:31]
-        header_data[offset:offset+32] = display_info.encode('utf-8').ljust(32, b'\x00')
+        display_info = self.manifest.get('display', 'None')
+        if display_info:
+            display_info = str(display_info)[:31]
+        else:
+            display_info = 'None'
+        display_bytes = (display_info.encode('utf-8') + b'\x00' * 32)[:32]
+        header_data[offset:offset+32] = display_bytes
         offset += 32
         
         # Reserved
