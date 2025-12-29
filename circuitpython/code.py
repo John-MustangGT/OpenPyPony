@@ -176,6 +176,22 @@ try:
                 }
                 webserver.send_config(config_dict)
                 print("[Web] Re-sent config to ESP")
+            elif req_type == 'file_list_request':
+                # Send list of recent session files
+                sessions = session_mgr.list_sessions(limit=10)
+                file_list = []
+                for session_file in sessions:
+                    info = session_mgr.get_session_info(session_file)
+                    if info:
+                        file_list.append(info)
+                webserver.send_file_list(file_list)
+                print(f"[Web] Sent file list ({len(file_list)} files)")
+            elif req_type == 'file_download_request':
+                # Stream file for download
+                filename = req_data
+                filepath = f"{session_mgr.base_path}/{filename}"
+                webserver.stream_file(filepath)
+                print(f"[Web] Streaming file: {filename}")
 
         # Update GPS
         gps.update()

@@ -1057,6 +1057,19 @@ class ESP01(WebServerInterface):
             print(f"[ESP01] Page request: {filename}")
             return ('page_request', filename)
 
+        # File list request: "ESP:list"
+        elif line == 'ESP:list':
+            print("[ESP01] File list requested")
+            return ('file_list_request', None)
+
+        # File download request: "ESP:download filename"
+        elif line.startswith('ESP:download'):
+            filename = line.split()[1] if len(line.split()) > 1 else None
+            if filename:
+                print(f"[ESP01] Download requested: {filename}")
+                return ('file_download_request', filename)
+            return None
+
         # Unknown message
         else:
             return None
@@ -1149,6 +1162,87 @@ class ESP01(WebServerInterface):
             self.uart.write(b"404\n")
             if self.debug:
                 print(f"[ESP01 TX] 404 (error: {e})")
+            return False
+
+    def send_file_list(self, file_list):
+        """
+        Send list of session files to ESP
+
+        Args:
+            file_list: List of dicts with file info {'filename', 'size', 'session_num'}
+
+        Returns:
+            bool: True if sent
+        """
+        try:
+            # Send file list header
+            self.uart.write(f"FILELIST:{len(file_list)}\n".encode())
+            if self.debug:
+                print(f"[ESP01 TX] FILELIST:{len(file_list)}")
+
+            # Send each file info as JSON-like string
+            for file_info in file_list:
+                line = f"{file_info['filename']}|{file_info['size']}|{file_info.get('session_num', 0)}\n"
+                self.uart.write(line.encode())
+                if self.debug:
+                    print(f"[ESP01 TX] {file_info['filename']} ({file_info['size']} bytes)")
+
+            # Send end marker
+            self.uart.write(b"END\n")
+            if self.debug:
+                print("[ESP01 TX] END")
+            return True
+
+        except Exception as e:
+            if self.debug:
+                print(f"[ESP01] Error sending file list: {e}")
+            return False
+
+    def stream_file(self, filepath):
+        """
+        Stream file content to ESP for download
+
+        Args:
+            filepath: Full path to file
+
+        Returns:
+            bool: True if sent successfully
+        """
+        try:
+            import os
+
+            # Get file size
+            stat = os.stat(filepath)
+            size = stat[6]
+
+            # Send file header with size
+            filename = filepath.split('/')[-1]
+            self.uart.write(f"DOWNLOAD:{filename}:{size}\n".encode())
+            if self.debug:
+                print(f"[ESP01 TX] DOWNLOAD:{filename}:{size}")
+
+            # Stream file in chunks
+            chunk_size = 512
+            bytes_sent = 0
+            with open(filepath, 'rb') as f:
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    self.uart.write(chunk)
+                    bytes_sent += len(chunk)
+
+            # Send end marker
+            self.uart.write(b"\nEND\n")
+            if self.debug:
+                print(f"[ESP01 TX] END ({bytes_sent} bytes sent)")
+            return True
+
+        except Exception as e:
+            # Send error
+            self.uart.write(b"ERROR\n")
+            if self.debug:
+                print(f"[ESP01 TX] ERROR: {e}")
             return False
 
     def get_status(self):

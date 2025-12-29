@@ -69,7 +69,13 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <div class="metric"><span class="metric-label">X</span><span class="metric-value" id="gx">+0.0</span></div>
 <div class="metric"><span class="metric-label">Y</span><span class="metric-value" id="gy">+0.0</span></div>
 <div class="metric"><span class="metric-label">Z</span><span class="metric-value" id="gz">+1.0</span></div></div>
+</div>
+<div class="card" style="grid-column:1/-1"><h2>Session Files</h2>
+<button onclick="loadFiles()" style="background:#667eea;color:white;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;margin-bottom:10px">Refresh</button>
+<div id="files" style="overflow-x:auto">Loading...</div></div>
 </div><script>
+function loadFiles(){fetch('/api/files').then(r=>r.json()).then(files=>{let html='<table style="width:100%;border-collapse:collapse">';html+='<tr style="border-bottom:2px solid #667eea"><th style="text-align:left;padding:8px">Session</th><th style="text-align:left;padding:8px">File</th><th style="text-align:right;padding:8px">Size</th><th style="text-align:center;padding:8px">Download</th></tr>';files.forEach(f=>{const sizeMB=(f.size/1024/1024).toFixed(2);const sizeKB=(f.size/1024).toFixed(1);const size=f.size>1024*1024?sizeMB+' MB':sizeKB+' KB';html+=`<tr style="border-bottom:1px solid #3a3a3a"><td style="padding:8px">#${f.session}</td><td style="padding:8px">${f.filename}</td><td style="text-align:right;padding:8px">${size}</td><td style="text-align:center;padding:8px"><a href="/api/download?file=${f.filename}" download="${f.filename}" style="background:#667eea;color:white;text-decoration:none;padding:4px 12px;border-radius:3px;font-size:0.9em">⬇</a></td></tr>`});html+='</table>';document.getElementById('files').innerHTML=html}).catch(()=>{document.getElementById('files').innerHTML='<p style="color:#ff7d7d">Error loading files</p>'})}
+window.addEventListener('load',loadFiles);
 let ws=new WebSocket('ws://'+window.location.hostname+'/ws');
 ws.onopen=()=>{document.getElementById('status').textContent='Connected';document.getElementById('status').className='status connected'};
 ws.onmessage=(e)=>{const d=JSON.parse(e.data);
@@ -117,6 +123,23 @@ unsigned long lastStatusTime = 0;
 // Incoming line buffer from Pico
 String uartLineBuffer = "";
 const size_t MAX_UART_LINE = 512;
+
+// File browser state
+struct FileInfo {
+    String filename;
+    uint32_t size;
+    uint16_t session_num;
+};
+FileInfo fileList[10];  // Store up to 10 files
+int fileCount = 0;
+bool fileListReady = false;
+
+// File download state
+bool downloadingFile = false;
+String downloadFilename = "";
+uint32_t downloadSize = 0;
+String downloadBuffer = "";
+AsyncWebServerRequest* downloadRequest = nullptr;
 
 // ============================================================================
 // Setup
@@ -260,6 +283,57 @@ void setupHTTPServer() {
         request->send_P(200, "text/html", INDEX_HTML);
     });
 
+    // File list API - request list from Pico and return as JSON
+    httpServer.on("/api/files", HTTP_GET, [](AsyncWebServerRequest *request){
+        // Request file list from Pico
+        sendLine("ESP:list");
+
+        // Wait briefly for response (non-blocking delay with yields)
+        unsigned long start = millis();
+        fileListReady = false;
+        while (!fileListReady && (millis() - start < 1000)) {
+            processUART();
+            yield();
+            delay(1);
+        }
+
+        // Build JSON response
+        String json = "[";
+        for (int i = 0; i < fileCount; i++) {
+            if (i > 0) json += ",";
+            json += "{";
+            json += "\"filename\":\"" + fileList[i].filename + "\",";
+            json += "\"size\":" + String(fileList[i].size) + ",";
+            json += "\"session\":" + String(fileList[i].session_num);
+            json += "}";
+        }
+        json += "]";
+
+        request->send(200, "application/json", json);
+    });
+
+    // File download API - request file from Pico and stream to browser
+    httpServer.on("/api/download", HTTP_GET, [](AsyncWebServerRequest *request){
+        if (!request->hasParam("file")) {
+            request->send(400, "text/plain", "Missing file parameter");
+            return;
+        }
+
+        String filename = request->getParam("file")->value();
+
+        // Request file from Pico
+        sendLine("ESP:download " + filename);
+
+        // Store request for async response
+        downloadRequest = request;
+        downloadingFile = true;
+        downloadFilename = filename;
+        downloadBuffer = "";
+
+        // Response will be sent when file arrives from Pico
+        // Handled in processLine() when DOWNLOAD message received
+    });
+
     // 404 handler
     httpServer.onNotFound([](AsyncWebServerRequest *request){
         request->send(404, "text/plain", "Not Found");
@@ -297,6 +371,35 @@ void processUART() {
     while (PicoSerial.available()) {
         char c = PicoSerial.read();
 
+        // If downloading file, buffer all bytes (including binary data)
+        if (downloadingFile && downloadSize > 0) {
+            downloadBuffer += c;
+
+            // Check if we've received all the file data
+            if (downloadBuffer.length() >= downloadSize) {
+                // Check for END marker after binary data
+                if (downloadBuffer.endsWith("\nEND\n") || downloadBuffer.endsWith("\nEND")) {
+                    // Remove END marker from buffer
+                    int endPos = downloadBuffer.lastIndexOf("\nEND");
+                    if (endPos > 0) {
+                        downloadBuffer = downloadBuffer.substring(0, endPos);
+                    }
+
+                    // Send file to browser
+                    if (downloadRequest) {
+                        downloadRequest->send(200, "application/octet-stream", downloadBuffer);
+                        downloadRequest = nullptr;
+                    }
+
+                    // Reset download state
+                    downloadingFile = false;
+                    downloadBuffer = "";
+                }
+            }
+            continue;
+        }
+
+        // Normal line-based processing
         if (c == '\n') {
             // Complete line received
             if (uartLineBuffer.length() > 0) {
@@ -355,8 +458,59 @@ void processLine(const String& line) {
         return;
     }
 
+    // File list response: FILELIST:count
+    if (line.startsWith("FILELIST:")) {
+        int count = line.substring(9).toInt();
+        fileCount = 0;  // Reset counter
+        return;
+    }
+
+    // File list entry: filename|size|session_num
+    if (fileCount < 10 && line.indexOf('|') > 0) {
+        int pipe1 = line.indexOf('|');
+        int pipe2 = line.indexOf('|', pipe1 + 1);
+        if (pipe2 > pipe1) {
+            fileList[fileCount].filename = line.substring(0, pipe1);
+            fileList[fileCount].size = line.substring(pipe1 + 1, pipe2).toInt();
+            fileList[fileCount].session_num = line.substring(pipe2 + 1).toInt();
+            fileCount++;
+            return;
+        }
+    }
+
+    // File list end marker
+    if (line == "END") {
+        if (fileCount > 0) {
+            fileListReady = true;
+        }
+        // Also end of config or file download
+        configReceived = true;
+        return;
+    }
+
+    // File download start: DOWNLOAD:filename:size
+    if (line.startsWith("DOWNLOAD:")) {
+        int colon1 = line.indexOf(':', 9);
+        if (colon1 > 0) {
+            downloadFilename = line.substring(9, colon1);
+            downloadSize = line.substring(colon1 + 1).toInt();
+            downloadBuffer = "";  // Clear buffer for binary data
+        }
+        return;
+    }
+
+    // Download error
+    if (line == "ERROR") {
+        if (downloadingFile && downloadRequest) {
+            downloadRequest->send(500, "text/plain", "Download failed");
+            downloadingFile = false;
+            downloadRequest = nullptr;
+        }
+        return;
+    }
+
     // Ignore page serving messages (HTML is now static on ESP)
-    if (line.startsWith("FILE:") || line.startsWith("ESP:get") || line == "END" || line == "404") {
+    if (line.startsWith("FILE:") || line.startsWith("ESP:get") || line == "404") {
         return;
     }
 }
