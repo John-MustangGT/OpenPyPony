@@ -870,7 +870,9 @@ class ESP01(WebServerInterface):
         self._last_status_time = 0
         self._config_sent = False
 
-        print("[ESP01] Initialized (115200 baud)")
+        # Get actual baudrate from UART object
+        baudrate = uart.baudrate if hasattr(uart, 'baudrate') else 'unknown'
+        print(f"[ESP01] Initialized ({baudrate} baud)")
         if self.debug:
             print("[ESP01] Debug mode enabled - will show all UART traffic")
 
