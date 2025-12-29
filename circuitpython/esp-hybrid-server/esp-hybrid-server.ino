@@ -87,6 +87,8 @@ const size_t MAX_UART_LINE = 512;
 bool servingPage = false;
 AsyncWebServerRequest* currentPageRequest = nullptr;
 AsyncResponseStream* currentPageResponse = nullptr;
+unsigned long pageRequestTime = 0;  // Track when page request started
+const unsigned long PAGE_TIMEOUT_MS = 5000;  // 5 second timeout
 
 // ============================================================================
 // Setup
@@ -167,6 +169,16 @@ void loop() {
     // Process incoming UART data from Pico
     processUART();
 
+    // Check for page request timeout
+    if (servingPage && (millis() - pageRequestTime > PAGE_TIMEOUT_MS)) {
+        if (currentPageRequest) {
+            currentPageRequest->send(504, "text/plain", "Gateway timeout - no response from logger");
+        }
+        servingPage = false;
+        currentPageRequest = nullptr;
+        currentPageResponse = nullptr;
+    }
+
     // Cleanup WebSocket clients
     wsServer.cleanupClients();
 
@@ -222,8 +234,15 @@ void setupWiFi() {
 
 void setupHTTPServer() {
     // Catch-all handler - forward ALL page requests to Pico
+    // This is truly async - we store the request and handle it in the main loop
     httpServer.onNotFound([](AsyncWebServerRequest *request) {
         String path = request->url();
+
+        // If already serving a page, reject this request
+        if (servingPage) {
+            request->send(503, "text/plain", "Server busy");
+            return;
+        }
 
         // Request page from Pico
         sendLine("ESP:get " + path);
@@ -231,22 +250,11 @@ void setupHTTPServer() {
         // Store request for async response
         currentPageRequest = request;
         servingPage = true;
+        pageRequestTime = millis();
         currentPageResponse = request->beginResponseStream("text/html");
 
-        // Wait for Pico response (with timeout)
-        unsigned long start = millis();
-        while (servingPage && (millis() - start < 5000)) {
-            processUART();
-            yield();
-        }
-
-        // If timeout or 404, send error page
-        if (servingPage) {
-            request->send(404, "text/plain", "Timeout waiting for content");
-            servingPage = false;
-            currentPageRequest = nullptr;
-            currentPageResponse = nullptr;
-        }
+        // Don't block! Response will be sent when Pico sends data
+        // Main loop handles timeout checking
     });
 }
 
