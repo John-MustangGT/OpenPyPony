@@ -908,7 +908,7 @@ class ESP01(WebServerInterface):
 
                     # Keep only last 4 bytes in buffer (looking for "+++\n")
                     if len(sync_buffer) > 4:
-                        sync_buffer.pop(0)
+                        sync_buffer = sync_buffer[-4:]  # CircuitPython doesn't support pop(0)
 
                     # Check for sync marker: +++\n (0x2B 0x2B 0x2B 0x0A)
                     if len(sync_buffer) >= 4 and sync_buffer[-4:] == b'+++\n':
