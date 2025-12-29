@@ -86,7 +86,7 @@ const size_t MAX_UART_LINE = 512;
 // Page serving state
 bool servingPage = false;
 AsyncWebServerRequest* currentPageRequest = nullptr;
-String pageContentBuffer = "";  // Buffer content until ready to send
+AsyncResponseStream* currentPageResponse = nullptr;  // Stream response
 unsigned long pageRequestTime = 0;  // Track when page request started
 const unsigned long PAGE_TIMEOUT_MS = 5000;  // 5 second timeout
 
@@ -176,7 +176,7 @@ void loop() {
         }
         servingPage = false;
         currentPageRequest = nullptr;
-        pageContentBuffer = "";
+        currentPageResponse = nullptr;
     }
 
     // Cleanup WebSocket clients
@@ -234,7 +234,7 @@ void setupWiFi() {
 
 void setupHTTPServer() {
     // Catch-all handler - forward ALL page requests to Pico
-    // This is truly async - we buffer content and send when complete
+    // Create response stream and fill it as data arrives from Pico
     httpServer.onNotFound([](AsyncWebServerRequest *request) {
         String path = request->url();
 
@@ -247,21 +247,15 @@ void setupHTTPServer() {
         // Request page from Pico
         sendLine("ESP:get " + path);
 
-        // Store request for async response and clear buffer
+        // Create chunked response stream immediately
+        // This keeps the connection open and allows us to write data as it arrives
+        currentPageResponse = request->beginResponseStream("text/html");
         currentPageRequest = request;
         servingPage = true;
         pageRequestTime = millis();
-        pageContentBuffer = "";
 
-        // Register disconnect handler to clean up if client disconnects
-        request->onDisconnect([]() {
-            servingPage = false;
-            currentPageRequest = nullptr;
-            pageContentBuffer = "";
-        });
-
-        // Don't send yet! Response will be sent when Pico sends all data
-        // Main loop handles timeout checking
+        // Don't send yet! We'll write to the stream as data arrives,
+        // then send when we receive END marker
     });
 }
 
@@ -356,34 +350,48 @@ void processLine(const String& line) {
 
     // File serving: FILE:filename:size
     if (line.startsWith("FILE:")) {
-        if (!servingPage) return;
+        if (!servingPage || !currentPageResponse) return;
 
-        // Parse FILE:filename:size
+        // Parse FILE:filename:size (currently unused - we stream content as it arrives)
         int colon1 = line.indexOf(':', 5);
         if (colon1 < 0) return;
 
         String filename = line.substring(5, colon1);
         int size = line.substring(colon1 + 1).toInt();
 
+#if DEBUG_MODE
+        DEBUG_SERIAL.print("[HTTP] Receiving file: ");
+        DEBUG_SERIAL.print(filename);
+        DEBUG_SERIAL.print(" (");
+        DEBUG_SERIAL.print(size);
+        DEBUG_SERIAL.println(" bytes)");
+#endif
+
         // Size will be followed by content and END marker
-        // We'll accumulate content until we see END
+        // Content will be written to currentPageResponse as it arrives
         return;
     }
 
     // File content or end marker
-    if (servingPage) {
+    if (servingPage && currentPageResponse) {
         if (line == "END") {
-            // Finish serving the page - send buffered content
-            if (currentPageRequest) {
-                currentPageRequest->send(200, "text/html", pageContentBuffer);
+#if DEBUG_MODE
+            DEBUG_SERIAL.println("[HTTP] Sending response...");
+#endif
+            // Finish serving the page - send the response stream
+            if (currentPageRequest && currentPageResponse) {
+                currentPageRequest->send(currentPageResponse);
+#if DEBUG_MODE
+                DEBUG_SERIAL.println("[HTTP] Response sent");
+#endif
             }
             servingPage = false;
             currentPageRequest = nullptr;
-            pageContentBuffer = "";
+            currentPageResponse = nullptr;
         } else {
-            // Content line - add to buffer
-            pageContentBuffer += line;
-            pageContentBuffer += "\n";
+            // Content line - write to response stream
+            currentPageResponse->print(line);
+            currentPageResponse->print("\n");
         }
         return;
     }
@@ -394,7 +402,7 @@ void processLine(const String& line) {
             currentPageRequest->send(404, "text/plain", "Not Found");
             servingPage = false;
             currentPageRequest = nullptr;
-            pageContentBuffer = "";
+            currentPageResponse = nullptr;
         }
         return;
     }
