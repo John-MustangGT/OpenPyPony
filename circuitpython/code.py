@@ -14,7 +14,7 @@ from webpages import get_page
 # Version information
 VERSION = "2.0.0-alpha"
 BUILD_DATE = "2024-12-27"
-GIT_SHA = "5e29f43"  # Update this when committing major changes
+GIT_SHA = "eb647bc"  # Update this when committing major changes
 
 # Session state
 session_running = True  # Whether logging is active

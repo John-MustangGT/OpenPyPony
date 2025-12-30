@@ -25,7 +25,7 @@
 
 // Version information
 #define ESP_VERSION "1.0.0"
-#define ESP_GIT_SHA "5e29f43"  // Update this when committing major changes
+#define ESP_GIT_SHA "eb647bc"  // Update this when committing major changes
 
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
