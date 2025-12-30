@@ -440,8 +440,28 @@ void processLine(const String& line) {
         return;
     }
 
+    // Check for END marker - could be config or file list
     if (line == "END") {
-        // End of configuration
+        // If we have a file list request pending, this is the end of file list
+        if (fileListRequest != nullptr && fileCount >= 0) {
+            // Build JSON response
+            String json = "[";
+            for (int i = 0; i < fileCount; i++) {
+                if (i > 0) json += ",";
+                json += "{";
+                json += "\"filename\":\"" + fileList[i].filename + "\",";
+                json += "\"size\":" + String(fileList[i].size) + ",";
+                json += "\"session\":" + String(fileList[i].session_num);
+                json += "}";
+            }
+            json += "]";
+
+            fileListRequest->send(200, "application/json", json);
+            fileListRequest = nullptr;
+            fileListReady = true;
+        }
+
+        // Also mark config as received (doesn't hurt if already set)
         configReceived = true;
         return;
     }
@@ -487,31 +507,6 @@ void processLine(const String& line) {
             fileCount++;
             return;
         }
-    }
-
-    // File list end marker
-    if (line == "END") {
-        // If we have a file list request pending, send the response
-        if (fileListRequest != nullptr && fileCount >= 0) {
-            // Build JSON response
-            String json = "[";
-            for (int i = 0; i < fileCount; i++) {
-                if (i > 0) json += ",";
-                json += "{";
-                json += "\"filename\":\"" + fileList[i].filename + "\",";
-                json += "\"size\":" + String(fileList[i].size) + ",";
-                json += "\"session\":" + String(fileList[i].session_num);
-                json += "}";
-            }
-            json += "]";
-
-            fileListRequest->send(200, "application/json", json);
-            fileListRequest = nullptr;
-            fileListReady = true;
-        }
-        // Also end of config
-        configReceived = true;
-        return;
     }
 
     // File download start: DOWNLOAD:filename:size
