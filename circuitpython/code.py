@@ -178,20 +178,43 @@ try:
                 print("[Web] Re-sent config to ESP")
             elif req_type == 'file_list_request':
                 # Send list of recent session files
-                sessions = session_mgr.list_sessions(limit=10)
-                file_list = []
-                for session_file in sessions:
-                    info = session_mgr.get_session_info(session_file)
-                    if info:
-                        file_list.append(info)
-                webserver.send_file_list(file_list)
-                print(f"[Web] Sent file list ({len(file_list)} files)")
+                print("[Web] File list requested")
+                try:
+                    if storage and 'session_mgr' in globals():
+                        print("[Web] Querying session manager...")
+                        sessions = session_mgr.list_sessions(limit=10)
+                        print(f"[Web] Found {len(sessions)} sessions")
+                        file_list = []
+                        for session_file in sessions:
+                            info = session_mgr.get_session_info(session_file)
+                            if info:
+                                file_list.append(info)
+                        webserver.send_file_list(file_list)
+                        print(f"[Web] Sent file list ({len(file_list)} files)")
+                    else:
+                        # No storage available - send empty list
+                        print("[Web] No storage - sending empty list")
+                        webserver.send_file_list([])
+                except Exception as e:
+                    print(f"[Web] ERROR getting file list: {e}")
+                    import traceback
+                    traceback.print_exception(e)
+                    webserver.send_file_list([])
             elif req_type == 'file_download_request':
                 # Stream file for download
-                filename = req_data
-                filepath = f"{session_mgr.base_path}/{filename}"
-                webserver.stream_file(filepath)
-                print(f"[Web] Streaming file: {filename}")
+                print(f"[Web] File download requested: {req_data}")
+                try:
+                    if storage and 'session_mgr' in globals():
+                        filename = req_data
+                        filepath = f"{session_mgr.base_path}/{filename}"
+                        webserver.stream_file(filepath)
+                        print(f"[Web] Streaming file: {filename}")
+                    else:
+                        print("[Web] ERROR: No storage - cannot download file")
+                except Exception as e:
+                    print(f"[Web] ERROR streaming file: {e}")
+                    import traceback
+                    traceback.print_exception(e)
 
         # Update GPS (with error handling for malformed NMEA sentences)
         try:
