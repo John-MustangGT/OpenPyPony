@@ -986,7 +986,6 @@ class ESP01(WebServerInterface):
         if self.uart.in_waiting:
             try:
                 chunk = self.uart.read(min(self.uart.in_waiting, 256))
-                print(f"Chunk: <{chunk}>")
                 if chunk:
                     for byte in chunk:
                         if byte == ord('\n'):
