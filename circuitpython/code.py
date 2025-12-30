@@ -16,6 +16,12 @@ VERSION = "2.0.0-alpha"
 BUILD_DATE = "2024-12-27"
 GIT_SHA = "5e29f43"  # Update this when committing major changes
 
+# Session state
+session_running = True  # Whether logging is active
+session_driver = None
+session_vehicle = None
+session_track = None
+
 print("\n" + "="*60)
 print(f"OpenPonyLogger v{VERSION}")
 print(f"Build: {BUILD_DATE}")
@@ -219,6 +225,81 @@ try:
                     print(f"[Web] ERROR streaming file: {e}")
                     import traceback
                     traceback.print_exception(e)
+            elif req_type == 'session_stop':
+                # Stop logging
+                print("[Web] Session stop requested")
+                session_running = False
+                webserver.send_session_status(session_running, session_mgr.current_session if storage else 0)
+            elif req_type == 'session_start':
+                # Start logging
+                print("[Web] Session start requested")
+                session_running = True
+                webserver.send_session_status(session_running, session_mgr.current_session if storage else 0)
+            elif req_type == 'session_restart':
+                # Restart session (close current, start new)
+                print("[Web] Session restart requested")
+                if logger:
+                    logger.close()
+                if storage and 'session_mgr' in globals():
+                    session_file = session_mgr.start_new_session()
+                    session_path = session_mgr.get_session_path()
+                    print(f"[Session] Restarted: {session_path}")
+                    logger = create_logger(session_path, config, hal.manifest)
+                    logger.open()
+                    session_start_time = time.monotonic()
+                session_running = True
+                webserver.send_session_status(session_running, session_mgr.current_session if storage else 0)
+            elif req_type == 'session_update':
+                # Update session info and restart
+                print(f"[Web] Session update requested: {req_data}")
+                # Parse session info from req_data
+                try:
+                    params = {}
+                    for param in req_data.split(','):
+                        if '=' in param:
+                            key, value = param.split('=', 1)
+                            params[key.strip()] = value.strip()
+
+                    # Update config with new session info
+                    if 'driver' in params:
+                        config.config['general.Driver_name'] = params['driver']
+                        session_driver = params['driver']
+                        print(f"[Session] Updated driver: {params['driver']}")
+                    if 'vehicle' in params:
+                        config.config['general.Vehicle_id'] = params['vehicle']
+                        session_vehicle = params['vehicle']
+                        print(f"[Session] Updated vehicle: {params['vehicle']}")
+                    if 'track' in params:
+                        session_track = params.get('track', '')
+                        print(f"[Session] Updated track: {params['track']}")
+
+                    # Restart session with new info
+                    if logger:
+                        logger.close()
+                    if storage and 'session_mgr' in globals():
+                        session_file = session_mgr.start_new_session()
+                        session_path = session_mgr.get_session_path()
+                        print(f"[Session] Restarted with new info: {session_path}")
+                        logger = create_logger(session_path, config, hal.manifest)
+                        logger.open()
+                        session_start_time = time.monotonic()
+                    session_running = True
+                    webserver.send_session_status(session_running, session_mgr.current_session if storage else 0)
+                except Exception as e:
+                    print(f"[Web] ERROR updating session: {e}")
+                    import traceback
+                    traceback.print_exception(e)
+            elif req_type == 'session_info_request':
+                # Send current session info
+                print("[Web] Session info requested")
+                info = {
+                    'session_num': session_mgr.current_session if storage else 0,
+                    'running': session_running,
+                    'driver': config.get('general.Driver_name', 'Unknown'),
+                    'vehicle': config.get('general.Vehicle_id', 'Unknown'),
+                    'track': session_track or ''
+                }
+                webserver.send_session_info(info)
 
         # Update GPS (with error handling for malformed NMEA sentences)
         try:
@@ -261,8 +342,8 @@ try:
             'gz': ema_gz
         }
 
-        # Log data frame
-        if logger:
+        # Log data frame (only if session is running)
+        if logger and session_running:
             logger.log_frame(gps_data, accel_data, time.time())
 
         # Print status every second

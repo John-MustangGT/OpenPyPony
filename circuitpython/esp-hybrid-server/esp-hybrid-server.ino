@@ -74,6 +74,22 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <div class="metric"><span class="metric-label">Y</span><span class="metric-value" id="gy">+0.0</span></div>
 <div class="metric"><span class="metric-label">Z</span><span class="metric-value" id="gz">+1.0</span></div></div>
 </div>
+<div class="card" style="grid-column:1/-1"><h2>Session Control</h2>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px">
+<div><div class="metric"><span class="metric-label">Session #</span><span class="metric-value" id="session-num">--</span></div>
+<div class="metric"><span class="metric-label">Status</span><span class="metric-value" id="session-status">--</span></div></div>
+<div style="display:flex;gap:10px;align-items:center;justify-content:center;flex-wrap:wrap">
+<button id="btn-start" onclick="sessionStart()" style="background:#2d5016;color:#7dff7d;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;font-weight:bold">▶ Start</button>
+<button id="btn-stop" onclick="sessionStop()" style="background:#501616;color:#ff7d7d;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;font-weight:bold">⏹ Stop</button>
+<button onclick="sessionRestart()" style="background:#667eea;color:white;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;font-weight:bold">🔄 Restart</button>
+</div></div>
+<div id="session-form" style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:10px">
+<input type="text" id="input-driver" placeholder="Driver Name" style="background:#3a3a3a;color:#e0e0e0;border:1px solid #667eea;padding:8px;border-radius:5px">
+<input type="text" id="input-vehicle" placeholder="Vehicle" style="background:#3a3a3a;color:#e0e0e0;border:1px solid #667eea;padding:8px;border-radius:5px">
+<input type="text" id="input-track" placeholder="Track/Location" style="background:#3a3a3a;color:#e0e0e0;border:1px solid #667eea;padding:8px;border-radius:5px">
+</div>
+<button onclick="updateSession()" style="background:#764ba2;color:white;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;font-weight:bold;width:100%">💾 Save & Restart Session</button>
+</div>
 <div class="card" style="grid-column:1/-1"><h2>Session Files</h2>
 <button onclick="loadFiles()" style="background:#667eea;color:white;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;margin-bottom:10px">Refresh</button>
 <div id="files" style="overflow-x:auto">Loading...</div></div>
@@ -85,7 +101,12 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 </div><script>
 function loadFiles(){fetch('/api/files').then(r=>r.json()).then(files=>{let html='<table style="width:100%;border-collapse:collapse">';html+='<tr style="border-bottom:2px solid #667eea"><th style="text-align:left;padding:8px">Session</th><th style="text-align:left;padding:8px">File</th><th style="text-align:right;padding:8px">Size</th><th style="text-align:center;padding:8px">Download</th></tr>';files.forEach(f=>{const sizeMB=(f.size/1024/1024).toFixed(2);const sizeKB=(f.size/1024).toFixed(1);const size=f.size>1024*1024?sizeMB+' MB':sizeKB+' KB';html+=`<tr style="border-bottom:1px solid #3a3a3a"><td style="padding:8px">#${f.session}</td><td style="padding:8px">${f.filename}</td><td style="text-align:right;padding:8px">${size}</td><td style="text-align:center;padding:8px"><a href="/api/download?file=${f.filename}" download="${f.filename}" style="background:#667eea;color:white;text-decoration:none;padding:4px 12px;border-radius:3px;font-size:0.9em">⬇</a></td></tr>`});html+='</table>';document.getElementById('files').innerHTML=html}).catch(()=>{document.getElementById('files').innerHTML='<p style="color:#ff7d7d">Error loading files</p>'})}
 function loadVersions(){fetch('/api/version').then(r=>r.json()).then(v=>{document.getElementById('esp-version').textContent=v.esp_version+' ('+v.esp_git+')';document.getElementById('pico-version').textContent=v.pico_version+' ('+v.pico_git+')'}).catch(()=>{document.getElementById('esp-version').textContent='Error';document.getElementById('pico-version').textContent='Error'})}
-window.addEventListener('load',()=>{loadFiles();loadVersions()});
+function loadSessionInfo(){fetch('/api/session/info').then(r=>r.json()).then(s=>{document.getElementById('session-num').textContent='#'+s.session_num;document.getElementById('session-status').textContent=s.running?'Running':'Stopped';document.getElementById('session-status').style.color=s.running?'#7dff7d':'#ff7d7d';document.getElementById('input-driver').value=s.driver;document.getElementById('input-vehicle').value=s.vehicle;document.getElementById('input-track').value=s.track;document.getElementById('btn-start').disabled=s.running;document.getElementById('btn-stop').disabled=!s.running}).catch(()=>console.error('Failed to load session info'))}
+function sessionStart(){fetch('/api/session/start',{method:'POST'}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}
+function sessionStop(){fetch('/api/session/stop',{method:'POST'}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}
+function sessionRestart(){if(confirm('Restart session? Current session will be closed and a new one will begin.')){fetch('/api/session/restart',{method:'POST'}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}}
+function updateSession(){const driver=document.getElementById('input-driver').value;const vehicle=document.getElementById('input-vehicle').value;const track=document.getElementById('input-track').value;if(!driver&&!vehicle&&!track){alert('Please enter at least one field');return}if(confirm('Save session info and restart? Current session will be closed and a new one will begin with the updated information.')){const formData=new FormData();if(driver)formData.append('driver',driver);if(vehicle)formData.append('vehicle',vehicle);if(track)formData.append('track',track);fetch('/api/session/update',{method:'POST',body:formData}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}}
+window.addEventListener('load',()=>{loadFiles();loadVersions();loadSessionInfo()});
 let ws=new WebSocket('ws://'+window.location.hostname+'/ws');
 ws.onopen=()=>{document.getElementById('status').textContent='Connected';document.getElementById('status').className='status connected'};
 ws.onmessage=(e)=>{const d=JSON.parse(e.data);
@@ -96,6 +117,7 @@ if(d.lon)document.getElementById('lon').textContent=d.lon.toFixed(6);
 if(d.satellites)document.getElementById('sats').textContent=d.satellites;
 if(d.gx)document.getElementById('gx').textContent=(d.gx>=0?'+':'')+d.gx.toFixed(2);
 if(d.gy)document.getElementById('gy').textContent=(d.gy>=0?'+':'')+d.gy.toFixed(2);
+if(d.session_status){document.getElementById('session-num').textContent='#'+d.session_status.session_num;document.getElementById('session-status').textContent=d.session_status.running?'Running':'Stopped';document.getElementById('session-status').style.color=d.session_status.running?'#7dff7d':'#ff7d7d';document.getElementById('btn-start').disabled=d.session_status.running;document.getElementById('btn-stop').disabled=!d.session_status.running}
 if(d.gz)document.getElementById('gz').textContent=(d.gz>=0?'+':'')+d.gz.toFixed(2)};
 ws.onclose=()=>{document.getElementById('status').textContent='Disconnected';document.getElementById('status').className='status disconnected';setTimeout(()=>location.reload(),2000)};
 </script></body></html>
@@ -118,6 +140,14 @@ IPAddress wifi_gateway;
 // Version information (received from Pico)
 String pico_version = "unknown";
 String pico_git = "unknown";
+
+// Session information (received from Pico)
+bool session_running = true;
+int session_num = 0;
+String session_driver = "Unknown";
+String session_vehicle = "Unknown";
+String session_track = "";
+AsyncWebServerRequest* sessionInfoRequest = nullptr;
 
 // ============================================================================
 // Servers
@@ -378,6 +408,56 @@ void setupHTTPServer() {
         request->send(200, "application/json", json);
     });
 
+    // Session control APIs
+    httpServer.on("/api/session/stop", HTTP_POST, [](AsyncWebServerRequest *request){
+        sendLine("ESP:session_stop");
+        request->send(200, "text/plain", "Stop command sent");
+    });
+
+    httpServer.on("/api/session/start", HTTP_POST, [](AsyncWebServerRequest *request){
+        sendLine("ESP:session_start");
+        request->send(200, "text/plain", "Start command sent");
+    });
+
+    httpServer.on("/api/session/restart", HTTP_POST, [](AsyncWebServerRequest *request){
+        sendLine("ESP:session_restart");
+        request->send(200, "text/plain", "Restart command sent");
+    });
+
+    httpServer.on("/api/session/update", HTTP_POST, [](AsyncWebServerRequest *request){
+        // Get parameters from POST body
+        String driver = request->hasParam("driver", true) ? request->getParam("driver", true)->value() : "";
+        String vehicle = request->hasParam("vehicle", true) ? request->getParam("vehicle", true)->value() : "";
+        String track = request->hasParam("track", true) ? request->getParam("track", true)->value() : "";
+
+        // Build command string
+        String cmd = "ESP:session_update ";
+        if (driver.length() > 0) cmd += "driver=" + driver;
+        if (vehicle.length() > 0) {
+            if (driver.length() > 0) cmd += ",";
+            cmd += "vehicle=" + vehicle;
+        }
+        if (track.length() > 0) {
+            if (driver.length() > 0 || vehicle.length() > 0) cmd += ",";
+            cmd += "track=" + track;
+        }
+
+        sendLine(cmd);
+        request->send(200, "text/plain", "Update command sent");
+    });
+
+    httpServer.on("/api/session/info", HTTP_GET, [](AsyncWebServerRequest *request){
+        // Request session info from Pico
+        if (sessionInfoRequest != nullptr) {
+            request->send(503, "text/plain", "Busy");
+            return;
+        }
+
+        sendLine("ESP:session_info");
+        sessionInfoRequest = request;
+        // Response will be sent when SESSION_INFO arrives from Pico
+    });
+
     // 404 handler
     httpServer.onNotFound([](AsyncWebServerRequest *request){
         request->send(404, "text/plain", "Not Found");
@@ -490,8 +570,23 @@ void processLine(const String& line) {
         return;
     }
 
-    // Check for END marker - could be config or file list
+    // Check for END marker - could be config, file list, or session info
     if (line == "END") {
+        // If we were receiving session info, send the response
+        if (receivingSessionInfo && sessionInfoRequest != nullptr) {
+            String json = "{";
+            json += "\"session_num\":" + String(session_num) + ",";
+            json += "\"running\":" + String(session_running ? "true" : "false") + ",";
+            json += "\"driver\":\"" + session_driver + "\",";
+            json += "\"vehicle\":\"" + session_vehicle + "\",";
+            json += "\"track\":\"" + session_track + "\"";
+            json += "}";
+
+            sessionInfoRequest->send(200, "application/json", json);
+            sessionInfoRequest = nullptr;
+            receivingSessionInfo = false;
+        }
+
         // If we have a file list request pending, this is the end of file list
         if (fileListRequest != nullptr && fileCount >= 0) {
             // Build JSON response
@@ -538,6 +633,51 @@ void processLine(const String& line) {
     if (line.startsWith("WS:")) {
         String json = line.substring(3);
         wsServer.textAll(json);
+        return;
+    }
+
+    // Session status response: SESSION_STATUS:status,session_num
+    if (line.startsWith("SESSION_STATUS:")) {
+        String data = line.substring(15);
+        int commaPos = data.indexOf(',');
+        if (commaPos > 0) {
+            String status = data.substring(0, commaPos);
+            session_num = data.substring(commaPos + 1).toInt();
+            session_running = (status == "running");
+
+            // Broadcast status update to WebSocket clients
+            String wsMsg = "{\"session_status\":{";
+            wsMsg += "\"running\":" + String(session_running ? "true" : "false") + ",";
+            wsMsg += "\"session_num\":" + String(session_num);
+            wsMsg += "}}";
+            wsServer.textAll(wsMsg);
+        }
+        return;
+    }
+
+    // Session info response header: SESSION_INFO
+    static bool receivingSessionInfo = false;
+    static String sessionInfoData = "";
+
+    if (line == "SESSION_INFO") {
+        receivingSessionInfo = true;
+        sessionInfoData = "";
+        return;
+    }
+
+    // Session info field (while receiving session info)
+    if (receivingSessionInfo && line.indexOf('=') > 0) {
+        int eqPos = line.indexOf('=');
+        String key = line.substring(0, eqPos);
+        String value = line.substring(eqPos + 1);
+
+        if (key == "session_num") session_num = value.toInt();
+        else if (key == "running") session_running = (value == "True" || value == "true" || value == "1");
+        else if (key == "driver") session_driver = value;
+        else if (key == "vehicle") session_vehicle = value;
+        else if (key == "track") session_track = value;
+
+        // Check for END on next iteration
         return;
     }
 

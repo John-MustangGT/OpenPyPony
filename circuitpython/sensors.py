@@ -1070,6 +1070,29 @@ class ESP01(WebServerInterface):
                 return ('file_download_request', filename)
             return None
 
+        # Session control commands
+        elif line == 'ESP:session_stop':
+            print("[ESP01] Session stop requested")
+            return ('session_stop', None)
+
+        elif line == 'ESP:session_start':
+            print("[ESP01] Session start requested")
+            return ('session_start', None)
+
+        elif line == 'ESP:session_restart':
+            print("[ESP01] Session restart requested")
+            return ('session_restart', None)
+
+        elif line.startswith('ESP:session_update'):
+            # Format: "ESP:session_update driver=John,vehicle=Mustang,track=Laguna Seca"
+            params = line.replace('ESP:session_update ', '', 1)
+            print(f"[ESP01] Session update requested: {params}")
+            return ('session_update', params)
+
+        elif line == 'ESP:session_info':
+            print("[ESP01] Session info requested")
+            return ('session_info_request', None)
+
         # Unknown message
         else:
             return None
@@ -1243,6 +1266,62 @@ class ESP01(WebServerInterface):
             self.uart.write(b"ERROR\n")
             if self.debug:
                 print(f"[ESP01 TX] ERROR: {e}")
+            return False
+
+    def send_session_status(self, running, session_num):
+        """
+        Send session status to ESP
+
+        Args:
+            running: bool - Whether session is running
+            session_num: int - Current session number
+
+        Returns:
+            bool: True if sent
+        """
+        try:
+            status_str = "running" if running else "stopped"
+            self.uart.write(f"SESSION_STATUS:{status_str},{session_num}\n".encode())
+            if self.debug:
+                print(f"[ESP01 TX] SESSION_STATUS:{status_str},{session_num}")
+            return True
+        except Exception as e:
+            if self.debug:
+                print(f"[ESP01] Error sending session status: {e}")
+            return False
+
+    def send_session_info(self, info):
+        """
+        Send current session info to ESP
+
+        Args:
+            info: dict with session info {'session_num', 'running', 'driver', 'vehicle', 'track'}
+
+        Returns:
+            bool: True if sent
+        """
+        try:
+            # Send session info header
+            self.uart.write(b"SESSION_INFO\n")
+            if self.debug:
+                print("[ESP01 TX] SESSION_INFO")
+
+            # Send each field
+            for key, value in info.items():
+                line = f"{key}={value}\n"
+                self.uart.write(line.encode())
+                if self.debug:
+                    print(f"[ESP01 TX] {key}={value}")
+
+            # Send end marker
+            self.uart.write(b"END\n")
+            if self.debug:
+                print("[ESP01 TX] END")
+            return True
+
+        except Exception as e:
+            if self.debug:
+                print(f"[ESP01] Error sending session info: {e}")
             return False
 
     def get_status(self):
