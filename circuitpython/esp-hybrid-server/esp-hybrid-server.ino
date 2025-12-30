@@ -144,7 +144,8 @@ String downloadBuffer = "";
 AsyncWebServerRequest* downloadRequest = nullptr;
 unsigned long downloadRequestTime = 0;
 
-const unsigned long FILE_REQUEST_TIMEOUT = 3000;  // 3 second timeout
+const unsigned long FILE_REQUEST_TIMEOUT = 3000;  // 3 second timeout for stalled transfers
+const unsigned long DOWNLOAD_ACTIVITY_TIMEOUT = 5000;  // 5 seconds with no data = timeout
 
 // ============================================================================
 // Setup
@@ -231,9 +232,9 @@ void loop() {
         fileListRequest = nullptr;
     }
 
-    // Check for file download request timeout
-    if (downloadRequest != nullptr && (millis() - downloadRequestTime > FILE_REQUEST_TIMEOUT)) {
-        downloadRequest->send(504, "text/plain", "Timeout - no response from logger");
+    // Check for file download request timeout (uses activity timeout - resets when data arrives)
+    if (downloadRequest != nullptr && (millis() - downloadRequestTime > DOWNLOAD_ACTIVITY_TIMEOUT)) {
+        downloadRequest->send(504, "text/plain", "Download timeout - no data from logger");
         downloadRequest = nullptr;
         downloadingFile = false;
         downloadBuffer = "";
@@ -386,6 +387,11 @@ void processUART() {
         if (downloadingFile && downloadSize > 0) {
             downloadBuffer += c;
 
+            // Reset timeout on activity (every 256 bytes to reduce overhead)
+            if (downloadBuffer.length() % 256 == 0) {
+                downloadRequestTime = millis();
+            }
+
             // Check if we've received all the file data
             if (downloadBuffer.length() >= downloadSize) {
                 // Check for END marker after binary data
@@ -516,6 +522,7 @@ void processLine(const String& line) {
             downloadFilename = line.substring(9, colon1);
             downloadSize = line.substring(colon1 + 1).toInt();
             downloadBuffer = "";  // Clear buffer for binary data
+            downloadRequestTime = millis();  // Reset timeout - data is arriving
         }
         return;
     }
