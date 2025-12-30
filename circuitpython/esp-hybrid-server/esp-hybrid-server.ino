@@ -564,6 +564,10 @@ void processUART() {
 }
 
 void processLine(const String& line) {
+    // Static variables for session info parsing
+    static bool receivingSessionInfo = false;
+    static String sessionInfoData = "";
+
     // CONFIG sequence
     if (line == "CONFIG") {
         // Start of configuration
@@ -656,9 +660,6 @@ void processLine(const String& line) {
     }
 
     // Session info response header: SESSION_INFO
-    static bool receivingSessionInfo = false;
-    static String sessionInfoData = "";
-
     if (line == "SESSION_INFO") {
         receivingSessionInfo = true;
         sessionInfoData = "";
