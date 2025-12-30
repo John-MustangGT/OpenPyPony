@@ -23,6 +23,10 @@
  * - Telemetry JSON broadcast to all WebSocket clients
  */
 
+// Version information
+#define ESP_VERSION "1.0.0"
+#define ESP_GIT_SHA "5e29f43"  // Update this when committing major changes
+
 #include <ESP8266WiFi.h>
 #include <ESPAsyncWebServer.h>
 #include <ESPAsyncTCP.h>
@@ -73,9 +77,15 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <div class="card" style="grid-column:1/-1"><h2>Session Files</h2>
 <button onclick="loadFiles()" style="background:#667eea;color:white;border:none;padding:8px 16px;border-radius:5px;cursor:pointer;margin-bottom:10px">Refresh</button>
 <div id="files" style="overflow-x:auto">Loading...</div></div>
+<div class="card" style="grid-column:1/-1;font-size:0.85em;color:#999;text-align:center">
+<div style="display:flex;justify-content:space-around;flex-wrap:wrap;gap:20px">
+<div><strong>ESP Firmware:</strong> <span id="esp-version">Loading...</span></div>
+<div><strong>Pico Firmware:</strong> <span id="pico-version">Loading...</span></div>
+</div></div>
 </div><script>
 function loadFiles(){fetch('/api/files').then(r=>r.json()).then(files=>{let html='<table style="width:100%;border-collapse:collapse">';html+='<tr style="border-bottom:2px solid #667eea"><th style="text-align:left;padding:8px">Session</th><th style="text-align:left;padding:8px">File</th><th style="text-align:right;padding:8px">Size</th><th style="text-align:center;padding:8px">Download</th></tr>';files.forEach(f=>{const sizeMB=(f.size/1024/1024).toFixed(2);const sizeKB=(f.size/1024).toFixed(1);const size=f.size>1024*1024?sizeMB+' MB':sizeKB+' KB';html+=`<tr style="border-bottom:1px solid #3a3a3a"><td style="padding:8px">#${f.session}</td><td style="padding:8px">${f.filename}</td><td style="text-align:right;padding:8px">${size}</td><td style="text-align:center;padding:8px"><a href="/api/download?file=${f.filename}" download="${f.filename}" style="background:#667eea;color:white;text-decoration:none;padding:4px 12px;border-radius:3px;font-size:0.9em">⬇</a></td></tr>`});html+='</table>';document.getElementById('files').innerHTML=html}).catch(()=>{document.getElementById('files').innerHTML='<p style="color:#ff7d7d">Error loading files</p>'})}
-window.addEventListener('load',loadFiles);
+function loadVersions(){fetch('/api/version').then(r=>r.json()).then(v=>{document.getElementById('esp-version').textContent=v.esp_version+' ('+v.esp_git+')';document.getElementById('pico-version').textContent=v.pico_version+' ('+v.pico_git+')'}).catch(()=>{document.getElementById('esp-version').textContent='Error';document.getElementById('pico-version').textContent='Error'})}
+window.addEventListener('load',()=>{loadFiles();loadVersions()});
 let ws=new WebSocket('ws://'+window.location.hostname+'/ws');
 ws.onopen=()=>{document.getElementById('status').textContent='Connected';document.getElementById('status').className='status connected'};
 ws.onmessage=(e)=>{const d=JSON.parse(e.data);
@@ -104,6 +114,10 @@ String wifi_password = "";
 IPAddress wifi_address;
 IPAddress wifi_netmask;
 IPAddress wifi_gateway;
+
+// Version information (received from Pico)
+String pico_version = "unknown";
+String pico_git = "unknown";
 
 // ============================================================================
 // Servers
@@ -353,6 +367,17 @@ void setupHTTPServer() {
         // Response will be sent when file arrives and is complete
     });
 
+    // Version info API - returns both ESP and Pico versions
+    httpServer.on("/api/version", HTTP_GET, [](AsyncWebServerRequest *request){
+        String json = "{";
+        json += "\"esp_version\":\"" + String(ESP_VERSION) + "\",";
+        json += "\"esp_git\":\"" + String(ESP_GIT_SHA) + "\",";
+        json += "\"pico_version\":\"" + pico_version + "\",";
+        json += "\"pico_git\":\"" + pico_git + "\"";
+        json += "}";
+        request->send(200, "application/json", json);
+    });
+
     // 404 handler
     httpServer.onNotFound([](AsyncWebServerRequest *request){
         request->send(404, "text/plain", "Not Found");
@@ -503,6 +528,8 @@ void processLine(const String& line) {
         else if (key == "address") wifi_address.fromString(value);
         else if (key == "netmask") wifi_netmask.fromString(value);
         else if (key == "gateway") wifi_gateway.fromString(value);
+        else if (key == "pico_version") pico_version = value;
+        else if (key == "pico_git") pico_git = value;
 
         return;
     }

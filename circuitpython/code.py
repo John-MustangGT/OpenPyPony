@@ -14,10 +14,12 @@ from webpages import get_page
 # Version information
 VERSION = "2.0.0-alpha"
 BUILD_DATE = "2024-12-27"
+GIT_SHA = "5e29f43"  # Update this when committing major changes
 
 print("\n" + "="*60)
 print(f"OpenPonyLogger v{VERSION}")
 print(f"Build: {BUILD_DATE}")
+print(f"Git SHA: {GIT_SHA}")
 print("="*60)
 
 # =============================================================================
@@ -172,7 +174,9 @@ try:
                     'password': hal.config.get('webserver.password', 'mustanggt'),
                     'address': hal.config.get('webserver.address', '192.168.4.1'),
                     'netmask': hal.config.get('webserver.netmask', '255.255.255.0'),
-                    'gateway': hal.config.get('webserver.gateway', '192.168.4.1')
+                    'gateway': hal.config.get('webserver.gateway', '192.168.4.1'),
+                    'pico_version': f"{VERSION}",
+                    'pico_git': GIT_SHA
                 }
                 webserver.send_config(config_dict)
                 print("[Web] Re-sent config to ESP")
