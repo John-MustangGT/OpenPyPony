@@ -193,8 +193,12 @@ try:
                 webserver.stream_file(filepath)
                 print(f"[Web] Streaming file: {filename}")
 
-        # Update GPS
-        gps.update()
+        # Update GPS (with error handling for malformed NMEA sentences)
+        try:
+            gps.update()
+        except (IndexError, ValueError) as e:
+            # GPS library can crash on malformed NMEA data - just skip this update
+            pass
 
         # Read accelerometer (RAW values for logging)
         gx, gy, gz = accel.get_gforce()
