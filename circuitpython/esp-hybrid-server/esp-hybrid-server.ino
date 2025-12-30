@@ -136,13 +136,15 @@ bool fileListReady = false;
 AsyncWebServerRequest* fileListRequest = nullptr;
 unsigned long fileListRequestTime = 0;
 
-// File download state
+// File download state (using pre-allocated buffer with size limits)
 bool downloadingFile = false;
 String downloadFilename = "";
 uint32_t downloadSize = 0;
 String downloadBuffer = "";
 AsyncWebServerRequest* downloadRequest = nullptr;
 unsigned long downloadRequestTime = 0;
+
+const uint32_t MAX_DOWNLOAD_SIZE = 32768;  // 32KB max file size for downloads
 
 const unsigned long FILE_REQUEST_TIMEOUT = 3000;  // 3 second timeout for stalled transfers
 const unsigned long DOWNLOAD_ACTIVITY_TIMEOUT = 5000;  // 5 seconds with no data = timeout
@@ -323,27 +325,32 @@ void setupHTTPServer() {
         // Handled in processLine() when END marker received
     });
 
-    // File download API - request file from Pico and stream to browser
+    // File download API - request file from Pico and send to browser
     httpServer.on("/api/download", HTTP_GET, [](AsyncWebServerRequest *request){
         if (!request->hasParam("file")) {
             request->send(400, "text/plain", "Missing file parameter");
             return;
         }
 
+        // Check if already downloading
+        if (downloadingFile) {
+            request->send(503, "text/plain", "Download already in progress");
+            return;
+        }
+
         String filename = request->getParam("file")->value();
+
+        // Reset download state
+        downloadingFile = true;
+        downloadFilename = filename;
+        downloadBuffer = "";
+        downloadRequestTime = millis();
+        downloadRequest = request;
 
         // Request file from Pico
         sendLine("ESP:download " + filename);
 
-        // Store request for async response
-        downloadRequest = request;
-        downloadRequestTime = millis();
-        downloadingFile = true;
-        downloadFilename = filename;
-        downloadBuffer = "";
-
-        // Response will be sent when file arrives from Pico
-        // Handled in processUART() when binary file data received
+        // Response will be sent when file arrives and is complete
     });
 
     // 404 handler
@@ -392,7 +399,7 @@ void processUART() {
                 downloadRequestTime = millis();
             }
 
-            // Check if we've received all the file data
+            // Check if we've received all the file data plus END marker
             if (downloadBuffer.length() >= downloadSize) {
                 // Check for END marker after binary data
                 if (downloadBuffer.endsWith("\nEND\n") || downloadBuffer.endsWith("\nEND")) {
@@ -404,7 +411,19 @@ void processUART() {
 
                     // Send file to browser
                     if (downloadRequest) {
-                        downloadRequest->send(200, "application/octet-stream", downloadBuffer);
+                        AsyncWebServerResponse *response = downloadRequest->beginResponse(
+                            "application/octet-stream", downloadSize,
+                            [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t {
+                                // Copy chunk of download buffer to output
+                                size_t remaining = downloadBuffer.length() - index;
+                                size_t toSend = (remaining < maxLen) ? remaining : maxLen;
+                                if (toSend > 0) {
+                                    memcpy(buffer, downloadBuffer.c_str() + index, toSend);
+                                }
+                                return toSend;
+                            });
+                        response->addHeader("Content-Disposition", "attachment; filename=\"" + downloadFilename + "\"");
+                        downloadRequest->send(response);
                         downloadRequest = nullptr;
                     }
 
@@ -521,8 +540,27 @@ void processLine(const String& line) {
         if (colon1 > 0) {
             downloadFilename = line.substring(9, colon1);
             downloadSize = line.substring(colon1 + 1).toInt();
-            downloadBuffer = "";  // Clear buffer for binary data
             downloadRequestTime = millis();  // Reset timeout - data is arriving
+
+            // Check if file is too large for available memory
+            uint32_t freeHeap = ESP.getFreeHeap();
+            uint32_t requiredMem = downloadSize + 512;  // File + overhead
+
+            if (downloadSize > MAX_DOWNLOAD_SIZE || requiredMem > (freeHeap - 8192)) {
+                // File too large - reject download
+                if (downloadRequest) {
+                    String errorMsg = "File too large (" + String(downloadSize) +
+                                    " bytes). Max: " + String(MAX_DOWNLOAD_SIZE) +
+                                    " bytes, Free heap: " + String(freeHeap) + " bytes";
+                    downloadRequest->send(507, "text/plain", errorMsg);
+                    downloadRequest = nullptr;
+                }
+                downloadingFile = false;
+                return;
+            }
+
+            // Pre-allocate memory for download buffer to avoid reallocations
+            downloadBuffer.reserve(downloadSize + 100);
         }
         return;
     }
