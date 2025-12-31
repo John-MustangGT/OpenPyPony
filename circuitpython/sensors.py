@@ -398,7 +398,17 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
             i2c: I2C bus object
             address: I2C address (0x68 or 0x69, default 0x68)
         """
-        import adafruit_mpu6050
+        try:
+            import adafruit_mpu6050
+        except ImportError:
+            raise ImportError(
+                "MPU6050 library not found!\n"
+                "Install adafruit_mpu6050 library to /lib/:\n"
+                "1. Download CircuitPython bundle from circuitpython.org/libraries\n"
+                "2. Copy 'adafruit_mpu6050.mpy' to /lib/\n"
+                "3. Copy 'adafruit_register/' folder to /lib/\n"
+                "4. Copy 'adafruit_bus_device/' folder to /lib/"
+            )
 
         self.sensor = adafruit_mpu6050.MPU6050(i2c, address=address)
 
