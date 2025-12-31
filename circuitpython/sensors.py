@@ -415,9 +415,14 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
         import time
         try:
             print(f"[MPU6050] Waking up sensor at 0x{address:02X}...")
+            while not i2c.try_lock():
+                pass
             i2c.writeto(address, bytes([0x6B, 0x00]))  # PWR_MGMT_1 register
+            i2c.unlock()
             time.sleep(0.1)  # Give sensor time to wake up
         except Exception as e:
+            if i2c.try_lock():  # Unlock if we had it locked
+                i2c.unlock()
             print(f"[MPU6050] Wake-up failed: {e}")
             raise
 
