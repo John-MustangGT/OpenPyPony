@@ -440,11 +440,9 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
             # Debug: Verify we can read WHO_AM_I register
             while not i2c.try_lock():
                 pass
-            # Write WHO_AM_I register address (0x75)
-            i2c.writeto(address, bytes([0x75]), stop=False)
-            # Read 1 byte
+            # Read WHO_AM_I register (0x75)
             result = bytearray(1)
-            i2c.readfrom_into(address, result)
+            i2c.writeto_then_readfrom(address, bytes([0x75]), result)
             i2c.unlock()
             print(f"[MPU6050] WHO_AM_I register: 0x{result[0]:02X} (expected 0x68)")
 
