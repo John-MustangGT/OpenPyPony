@@ -142,6 +142,7 @@ print("="*60 + "\n")
 
 # Get sensor interfaces
 accel = hal.get_accelerometer()
+gyro = hal.get_gyroscope()
 webserver = hal.get_webserver()
 
 # Main loop
@@ -156,6 +157,9 @@ EMA_ALPHA = 0.2  # Higher = more responsive, Lower = more smoothed
 ema_gx = 0.0
 ema_gy = 0.0
 ema_gz = 1.0
+ema_rx = 0.0
+ema_ry = 0.0
+ema_rz = 0.0
 
 try:
     while True:
@@ -311,6 +315,13 @@ try:
         # Read accelerometer (RAW values for logging)
         gx, gy, gz = accel.get_gforce()
 
+        # Read gyroscope (RAW values for logging)
+        rx, ry, rz = 0.0, 0.0, 0.0
+        if hal.has_gyroscope():
+            rotation = gyro.get_rotation()
+            if rotation:
+                rx, ry, rz = rotation
+
         # Prepare data for logging (handle None values from GPS)
         position = gps.get_position() if gps.has_fix() else (0.0, 0.0, 0.0)
         speed = gps.get_speed() if gps.has_fix() else 0.0
@@ -331,10 +342,19 @@ try:
             'gz': gz or 1.0  # Default to 1g for z-axis if None
         }
 
+        gyro_data = {
+            'rx': rx or 0.0,
+            'ry': ry or 0.0,
+            'rz': rz or 0.0
+        }
+
         # Apply EMA smoothing for display ONLY (log raw values!)
         ema_gx = EMA_ALPHA * accel_data['gx'] + (1.0 - EMA_ALPHA) * ema_gx
         ema_gy = EMA_ALPHA * accel_data['gy'] + (1.0 - EMA_ALPHA) * ema_gy
         ema_gz = EMA_ALPHA * accel_data['gz'] + (1.0 - EMA_ALPHA) * ema_gz
+        ema_rx = EMA_ALPHA * gyro_data['rx'] + (1.0 - EMA_ALPHA) * ema_rx
+        ema_ry = EMA_ALPHA * gyro_data['ry'] + (1.0 - EMA_ALPHA) * ema_ry
+        ema_rz = EMA_ALPHA * gyro_data['rz'] + (1.0 - EMA_ALPHA) * ema_rz
 
         accel_data_smoothed = {
             'gx': ema_gx,
@@ -342,9 +362,15 @@ try:
             'gz': ema_gz
         }
 
+        gyro_data_smoothed = {
+            'rx': ema_rx,
+            'ry': ema_ry,
+            'rz': ema_rz
+        }
+
         # Log data frame (only if session is running)
         if logger and session_running:
-            logger.log_frame(gps_data, accel_data, time.time())
+            logger.log_frame(gps_data, accel_data, time.time(), gyro_data)
 
         # Print status every second
         if loop_count % 10 == 0:
@@ -396,7 +422,10 @@ try:
                 'hdop': gps_data['hdop'],
                 'gx': accel_data_smoothed['gx'],
                 'gy': accel_data_smoothed['gy'],
-                'gz': accel_data_smoothed['gz']
+                'gz': accel_data_smoothed['gz'],
+                'rx': gyro_data_smoothed['rx'],
+                'ry': gyro_data_smoothed['ry'],
+                'rz': gyro_data_smoothed['rz']
             }
             webserver.stream_telemetry(telemetry)
             last_telemetry_send = current_time

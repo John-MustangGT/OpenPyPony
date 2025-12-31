@@ -19,8 +19,8 @@ import busio
 import digitalio
 import time
 from sensors import (
-    LIS3DH, ATGM336H, PCF8523, SSD1306, SDCard, ESP01,
-    NullAccelerometer, NullGPS, NullDisplay
+    LIS3DH, ATGM336H, PCF8523, SSD1306, SDCard, ESP01, MPU6050,
+    NullAccelerometer, NullGPS, NullDisplay, NullGyroscope
 )
 
 
@@ -49,6 +49,7 @@ class HardwareAbstractionLayer:
 
         # Device references (interfaces)
         self._accelerometer = None
+        self._gyroscope = None
         self._gps = None
         self._rtc = None
         self._display = None
@@ -59,6 +60,7 @@ class HardwareAbstractionLayer:
         self.manifest = {
             'board': 'Raspberry Pi Pico 2W',
             'accelerometer': None,
+            'gyroscope': None,
             'gps': None,
             'rtc': None,
             'display': None,
@@ -207,31 +209,52 @@ class HardwareAbstractionLayer:
             print("  ✗ Accelerometer skipped (no I2C)")
             self._accelerometer = NullAccelerometer()
             return
-        
+
         # Check if enabled in config
         if not self.config.get('sensors.accelerometer.enabled', True):
             print("  - Accelerometer disabled in config")
             self._accelerometer = NullAccelerometer()
             return
-        
+
         try:
             accel_type = self.config.get('sensors.accelerometer.type', 'LIS3DH')
             accel_addr = self.config.get('sensors.accelerometer.address', 0x18)
-            
+
             if accel_type == 'LIS3DH':
                 self._accelerometer = LIS3DH(self.i2c, address=accel_addr)
-                
+
                 # Configure from settings
                 accel_range = self.config.get('sensors.accelerometer.range', 2)
                 accel_rate = self.config.get('sensors.accelerometer.sample_rate', 100)
                 self._accelerometer.configure(accel_range, accel_rate)
-                
+
                 self.manifest['accelerometer'] = f'LIS3DH @0x{accel_addr:02X}'
                 print(f"  ✓ Accelerometer detected (LIS3DH @0x{accel_addr:02X})")
+
+            elif accel_type == 'MPU6050':
+                # MPU6050 provides both accelerometer and gyroscope
+                self._accelerometer = MPU6050(self.i2c, address=accel_addr)
+
+                # Configure from settings
+                accel_range = self.config.get('sensors.accelerometer.range', 2)
+                accel_rate = self.config.get('sensors.accelerometer.sample_rate', 100)
+                self._accelerometer.configure(accel_range, accel_rate)
+
+                # Also configure gyroscope if enabled
+                if self.config.get('sensors.gyroscope.enabled', True):
+                    gyro_range = self.config.get('sensors.gyroscope.range', 250)
+                    self._accelerometer.configure_gyro(gyro_range)
+                    self._gyroscope = self._accelerometer  # Share the same MPU6050 instance
+                    self.manifest['gyroscope'] = f'MPU6050 @0x{accel_addr:02X}'
+                    print(f"  ✓ Gyroscope detected (MPU6050 @0x{accel_addr:02X})")
+
+                self.manifest['accelerometer'] = f'MPU6050 @0x{accel_addr:02X}'
+                print(f"  ✓ Accelerometer detected (MPU6050 @0x{accel_addr:02X})")
+
             else:
                 print(f"  ✗ Unknown accelerometer type: {accel_type}")
                 self._accelerometer = NullAccelerometer()
-                
+
         except Exception as e:
             print(f"  ✗ Accelerometer init failed: {e}")
             self._accelerometer = NullAccelerometer()
@@ -425,6 +448,15 @@ class HardwareAbstractionLayer:
         """
         return self._webserver
 
+    def get_gyroscope(self):
+        """
+        Get gyroscope interface
+
+        Returns:
+            GyroscopeInterface (may be NullGyroscope if disabled)
+        """
+        return self._gyroscope
+
     def has_accelerometer(self):
         """Check if real accelerometer available"""
         return not isinstance(self._accelerometer, NullAccelerometer)
@@ -448,6 +480,10 @@ class HardwareAbstractionLayer:
     def has_webserver(self):
         """Check if web server available"""
         return self._webserver is not None and self._webserver.is_ready()
+
+    def has_gyroscope(self):
+        """Check if real gyroscope available"""
+        return self._gyroscope is not None and not isinstance(self._gyroscope, NullGyroscope)
 
     def get_manifest(self):
         """

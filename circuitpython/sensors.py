@@ -14,34 +14,66 @@ import time
 
 class AccelerometerInterface:
     """Base interface for accelerometers"""
-    
+
     def read(self):
         """
         Read acceleration data
-        
+
         Returns:
             tuple: (x, y, z) in m/s² or None if read fails
         """
         raise NotImplementedError("Subclass must implement read()")
-    
+
     def configure(self, range_g=2, rate_hz=100):
         """
         Configure accelerometer
-        
+
         Args:
             range_g: Measurement range in g (2, 4, 8, 16)
             rate_hz: Sample rate in Hz
         """
         raise NotImplementedError("Subclass must implement configure()")
-    
+
     def get_gforce(self):
         """
         Get G-force vector
-        
+
         Returns:
             tuple: (gx, gy, gz) in g units
         """
         raise NotImplementedError("Subclass must implement get_gforce()")
+
+
+class GyroscopeInterface:
+    """Base interface for gyroscopes"""
+
+    def read(self):
+        """
+        Read gyroscope data
+
+        Returns:
+            tuple: (x, y, z) in degrees/second or None if read fails
+        """
+        raise NotImplementedError("Subclass must implement read()")
+
+    def configure(self, range_dps=250, rate_hz=100):
+        """
+        Configure gyroscope
+
+        Args:
+            range_dps: Measurement range in degrees/second (250, 500, 1000, 2000)
+            rate_hz: Sample rate in Hz
+        """
+        raise NotImplementedError("Subclass must implement configure()")
+
+    def get_rotation(self):
+        """
+        Get rotation rates
+
+        Returns:
+            tuple: (rx, ry, rz) in degrees/second
+        """
+        raise NotImplementedError("Subclass must implement get_rotation()")
 
 
 class GPSInterface:
@@ -355,26 +387,133 @@ class LIS3DH(AccelerometerInterface):
         return (x / 9.81, y / 9.81, z / 9.81)
 
 
+class MPU6050(AccelerometerInterface, GyroscopeInterface):
+    """MPU6050/GY-521 6-axis IMU (accelerometer + gyroscope) implementation"""
+
+    def __init__(self, i2c, address=0x68):
+        """
+        Initialize MPU6050
+
+        Args:
+            i2c: I2C bus object
+            address: I2C address (0x68 or 0x69, default 0x68)
+        """
+        import adafruit_mpu6050
+
+        self.sensor = adafruit_mpu6050.MPU6050(i2c, address=address)
+
+        # Configure defaults
+        self.sensor.accelerometer_range = adafruit_mpu6050.Range.RANGE_2_G
+        self.sensor.gyro_range = adafruit_mpu6050.GyroRange.RANGE_250_DPS
+        self.sensor.filter_bandwidth = adafruit_mpu6050.Bandwidth.BAND_21_HZ
+
+        self._last_accel = (0.0, 0.0, 0.0)
+        self._last_gyro = (0.0, 0.0, 0.0)
+
+        print(f"[MPU6050] Initialized at 0x{address:02X}")
+
+    def read(self):
+        """Read raw acceleration in m/s²"""
+        try:
+            x, y, z = self.sensor.acceleration
+            self._last_accel = (x, y, z)
+            return (x, y, z)
+        except Exception as e:
+            print(f"[MPU6050] Accel read error: {e}")
+            return self._last_accel
+
+    def configure(self, range_g=2, rate_hz=100):
+        """Configure accelerometer range"""
+        import adafruit_mpu6050
+
+        # Set accelerometer range
+        range_map = {
+            2: adafruit_mpu6050.Range.RANGE_2_G,
+            4: adafruit_mpu6050.Range.RANGE_4_G,
+            8: adafruit_mpu6050.Range.RANGE_8_G,
+            16: adafruit_mpu6050.Range.RANGE_16_G
+        }
+
+        if range_g in range_map:
+            self.sensor.accelerometer_range = range_map[range_g]
+
+        # Set filter bandwidth based on rate
+        if rate_hz >= 200:
+            self.sensor.filter_bandwidth = adafruit_mpu6050.Bandwidth.BAND_260_HZ
+        elif rate_hz >= 100:
+            self.sensor.filter_bandwidth = adafruit_mpu6050.Bandwidth.BAND_94_HZ
+        elif rate_hz >= 50:
+            self.sensor.filter_bandwidth = adafruit_mpu6050.Bandwidth.BAND_44_HZ
+        else:
+            self.sensor.filter_bandwidth = adafruit_mpu6050.Bandwidth.BAND_21_HZ
+
+        print(f"[MPU6050] Accel configured: ±{range_g}g")
+
+    def get_gforce(self):
+        """Convert acceleration to g-force"""
+        x, y, z = self.read()
+        return (x / 9.81, y / 9.81, z / 9.81)
+
+    def read_gyro(self):
+        """Read raw gyroscope data in degrees/second"""
+        try:
+            x, y, z = self.sensor.gyro
+            self._last_gyro = (x, y, z)
+            return (x, y, z)
+        except Exception as e:
+            print(f"[MPU6050] Gyro read error: {e}")
+            return self._last_gyro
+
+    def configure_gyro(self, range_dps=250):
+        """Configure gyroscope range"""
+        import adafruit_mpu6050
+
+        # Set gyroscope range
+        range_map = {
+            250: adafruit_mpu6050.GyroRange.RANGE_250_DPS,
+            500: adafruit_mpu6050.GyroRange.RANGE_500_DPS,
+            1000: adafruit_mpu6050.GyroRange.RANGE_1000_DPS,
+            2000: adafruit_mpu6050.GyroRange.RANGE_2000_DPS
+        }
+
+        if range_dps in range_map:
+            self.sensor.gyro_range = range_map[range_dps]
+
+        print(f"[MPU6050] Gyro configured: ±{range_dps}°/s")
+
+    def get_rotation(self):
+        """Get rotation rates in degrees/second"""
+        return self.read_gyro()
+
+    def get_temperature(self):
+        """Get temperature in Celsius"""
+        try:
+            return self.sensor.temperature
+        except Exception as e:
+            print(f"[MPU6050] Temperature read error: {e}")
+            return 0.0
+
+
 class ATGM336H(GPSInterface):
     """ATGM336H GPS module implementation"""
-    
+
     def __init__(self, uart):
         """
         Initialize ATGM336H GPS
-        
+
         Args:
             uart: UART object connected to GPS module
         """
         import adafruit_gps
-        
+
         self.gps = adafruit_gps.GPS(uart, debug=False)
-        
+
         # Configure GPS
         self.gps.send_command(b'PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA
         self.gps.send_command(b'PMTK220,1000')  # 1Hz update rate
-        
+
         self._last_update = 0
-        
+
         print("[ATGM336H] Initialized")
     
     def update(self):
@@ -1346,15 +1485,28 @@ class NullAccelerometer(AccelerometerInterface):
         return (0.0, 0.0, 1.0)
 
 
+class NullGyroscope(GyroscopeInterface):
+    """Stub gyroscope when disabled"""
+
+    def read(self):
+        return (0.0, 0.0, 0.0)
+
+    def configure(self, range_dps=250, rate_hz=100):
+        pass
+
+    def get_rotation(self):
+        return (0.0, 0.0, 0.0)
+
+
 class NullGPS(GPSInterface):
     """Stub GPS when disabled"""
-    
+
     def update(self):
         return False
-    
+
     def has_fix(self):
         return False
-    
+
     def get_time(self):
         return None
     

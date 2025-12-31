@@ -132,12 +132,13 @@ class BinaryLogger:
         # - GPS info (64 bytes, null-terminated)
         # - RTC info (32 bytes, null-terminated)
         # - Display info (32 bytes, null-terminated)
-        # - Reserved (64 bytes)
+        # - Gyroscope info (32 bytes, null-terminated)
+        # - Reserved (32 bytes)
         # - Checksum (4 bytes, CRC32)
-        
+
         header_data = bytearray(self.HEADER_SIZE)
         offset = 0
-        
+
         # Hardware name
         hw_name = self.config.get('hardware.name', 'OpenPonyLogger')[:63]
         hw_bytes = (hw_name.encode('utf-8') + b'\x00' * 64)[:64]
@@ -183,9 +184,19 @@ class BinaryLogger:
         display_bytes = (display_info.encode('utf-8') + b'\x00' * 32)[:32]
         header_data[offset:offset+32] = display_bytes
         offset += 32
-        
+
+        # Gyroscope
+        gyro_info = self.manifest.get('gyroscope', 'None')
+        if gyro_info:
+            gyro_info = str(gyro_info)[:31]
+        else:
+            gyro_info = 'None'
+        gyro_bytes = (gyro_info.encode('utf-8') + b'\x00' * 32)[:32]
+        header_data[offset:offset+32] = gyro_bytes
+        offset += 32
+
         # Reserved
-        # offset += 64 (already zeroed)
+        # offset += 32 (already zeroed)
         
         # Checksum
         checksum = self._crc32(header_data[:-4])
@@ -194,18 +205,19 @@ class BinaryLogger:
         # Write to file
         self.file.write(header_data)
     
-    def log_frame(self, gps_data, accel_data, timestamp):
+    def log_frame(self, gps_data, accel_data, timestamp, gyro_data=None):
         """
         Log a data frame
-        
+
         Args:
             gps_data: dict with GPS data (lat, lon, alt, speed, etc.)
             accel_data: dict with accelerometer data (gx, gy, gz)
             timestamp: Unix timestamp (float)
+            gyro_data: dict with gyroscope data (rx, ry, rz) [optional]
         """
         if not self.file:
             return
-        
+
         # Create frame (64 bytes):
         # - Timestamp (8 bytes, double)
         # - GPS latitude (8 bytes, double)
@@ -217,7 +229,10 @@ class BinaryLogger:
         # - Accel gx (4 bytes, float)
         # - Accel gy (4 bytes, float)
         # - Accel gz (4 bytes, float)
-        # - Reserved (20 bytes)
+        # - Gyro rx (4 bytes, float)
+        # - Gyro ry (4 bytes, float)
+        # - Gyro rz (4 bytes, float)
+        # - Reserved (8 bytes)
         # - Checksum (4 bytes, CRC32)
         
         frame_data = bytearray(self.FRAME_SIZE)
@@ -249,9 +264,20 @@ class BinaryLogger:
         offset += 4
         struct.pack_into('<f', frame_data, offset, accel_data.get('gz', 0.0))
         offset += 4
-        
+
+        # Gyroscope data (optional)
+        if gyro_data:
+            struct.pack_into('<f', frame_data, offset, gyro_data.get('rx', 0.0))
+            offset += 4
+            struct.pack_into('<f', frame_data, offset, gyro_data.get('ry', 0.0))
+            offset += 4
+            struct.pack_into('<f', frame_data, offset, gyro_data.get('rz', 0.0))
+            offset += 4
+        else:
+            offset += 12  # Skip gyro data if not available
+
         # Reserved (for future expansion)
-        # offset += 20 (already zeroed)
+        # offset += 8 (already zeroed)
         
         # Checksum
         checksum = self._crc32(frame_data[:-4])
@@ -374,32 +400,33 @@ class CSVLogger:
         """Open CSV file and write header"""
         try:
             self.file = open(self.filepath, 'w')
-            
+
             # Write CSV header
-            header = "timestamp,lat,lon,alt,speed,satellites,gx,gy,gz\n"
+            header = "timestamp,lat,lon,alt,speed,satellites,gx,gy,gz,rx,ry,rz\n"
             self.file.write(header)
             self.file.flush()
-            
+
             print(f"[CSVLogger] Opened and wrote header")
-            
+
         except Exception as e:
             print(f"[CSVLogger] Error opening file: {e}")
             self.file = None
     
-    def log_frame(self, gps_data, accel_data, timestamp):
+    def log_frame(self, gps_data, accel_data, timestamp, gyro_data=None):
         """
         Log a data frame to CSV
-        
+
         Args:
             gps_data: dict with GPS data
             accel_data: dict with accelerometer data
             timestamp: Unix timestamp (float)
+            gyro_data: dict with gyroscope data [optional]
         """
         if not self.file:
             return
-        
+
         # Format CSV line
-        line = "{:.3f},{:.6f},{:.6f},{:.1f},{:.2f},{},{:.3f},{:.3f},{:.3f}\n".format(
+        line = "{:.3f},{:.6f},{:.6f},{:.1f},{:.2f},{},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f},{:.3f}\n".format(
             timestamp,
             gps_data.get('lat', 0.0),
             gps_data.get('lon', 0.0),
@@ -408,7 +435,10 @@ class CSVLogger:
             gps_data.get('satellites', 0),
             accel_data.get('gx', 0.0),
             accel_data.get('gy', 0.0),
-            accel_data.get('gz', 1.0)
+            accel_data.get('gz', 1.0),
+            gyro_data.get('rx', 0.0) if gyro_data else 0.0,
+            gyro_data.get('ry', 0.0) if gyro_data else 0.0,
+            gyro_data.get('rz', 0.0) if gyro_data else 0.0
         )
         
         # Add to buffer
