@@ -437,6 +437,20 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
             i2c.unlock()
             time.sleep(0.05)
 
+            # Debug: Verify we can read WHO_AM_I register
+            while not i2c.try_lock():
+                pass
+            # Write WHO_AM_I register address (0x75)
+            i2c.writeto(address, bytes([0x75]), stop=False)
+            # Read 1 byte
+            result = bytearray(1)
+            i2c.readfrom_into(address, result)
+            i2c.unlock()
+            print(f"[MPU6050] WHO_AM_I register: 0x{result[0]:02X} (expected 0x68)")
+
+            if result[0] != 0x68 and result[0] != 0x70:  # MPU6050 or MPU6500
+                raise RuntimeError(f"WHO_AM_I mismatch: got 0x{result[0]:02X}, expected 0x68")
+
         except Exception as e:
             if i2c.try_lock():  # Unlock if we had it locked
                 i2c.unlock()
