@@ -143,6 +143,7 @@ print("="*60 + "\n")
 # Get sensor interfaces
 accel = hal.get_accelerometer()
 gyro = hal.get_gyroscope()
+mag = hal.get_magnetometer()
 webserver = hal.get_webserver()
 
 # Main loop
@@ -322,6 +323,11 @@ try:
             if rotation:
                 rx, ry, rz = rotation
 
+        # Read magnetometer/compass
+        heading = 0.0
+        if hal.has_magnetometer():
+            heading = mag.get_heading()
+
         # Prepare data for logging (handle None values from GPS)
         position = gps.get_position() if gps.has_fix() else (0.0, 0.0, 0.0)
         speed = gps.get_speed() if gps.has_fix() else 0.0
@@ -417,6 +423,7 @@ try:
                 'lon': gps_data['lon'],
                 'alt': gps_data['alt'],
                 'speed': gps_data['speed'] * 2.237,  # Convert m/s to MPH for display
+                'heading': heading,  # Compass heading from magnetometer (0-360°)
                 'satellites': gps_data['satellites'],
                 'fix_type': gps_data['fix_type'],
                 'hdop': gps_data['hdop'],

@@ -528,6 +528,14 @@ class HardwareAbstractionLayer:
         """Check if real gyroscope available"""
         return self._gyroscope is not None and not isinstance(self._gyroscope, NullGyroscope)
 
+    def get_magnetometer(self):
+        """Get magnetometer interface"""
+        return self._magnetometer if self._magnetometer else NullMagnetometer()
+
+    def has_magnetometer(self):
+        """Check if real magnetometer available"""
+        return self._magnetometer is not None and not isinstance(self._magnetometer, NullMagnetometer)
+
     def get_manifest(self):
         """
         Get hardware manifest dictionary
