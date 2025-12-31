@@ -149,6 +149,10 @@ INDEX_HTML = """<!DOCTYPE html>
                 <span class="metric-value" id="alt">--</span>
             </div>
             <div class="metric">
+                <span class="metric-label">Track (COG)</span>
+                <span class="metric-value" id="track">--</span>
+            </div>
+            <div class="metric">
                 <span class="metric-label">Satellites</span>
                 <span class="metric-value" id="sats">0</span>
             </div>
@@ -159,6 +163,15 @@ INDEX_HTML = """<!DOCTYPE html>
             <div class="metric">
                 <span class="metric-label">HDOP</span>
                 <span class="metric-value" id="hdop">--</span>
+            </div>
+        </div>
+
+        <!-- Magnetometer Card -->
+        <div class="card">
+            <h2>Magnetometer</h2>
+            <div style="text-align: center; padding: 20px 0;">
+                <div style="font-size: 3em; font-weight: bold; color: #667eea; margin-bottom: 10px;" id="compass-heading">--</div>
+                <div style="font-size: 1.2em; color: #999; font-family: 'Courier New', monospace;" id="compass-degrees">---°</div>
             </div>
         </div>
 
@@ -224,6 +237,13 @@ INDEX_HTML = """<!DOCTYPE html>
             };
         }
 
+        // Helper function to convert degrees to compass direction
+        function degreesToCompass(degrees) {
+            const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+            const index = Math.round(((degrees % 360) / 45)) % 8;
+            return directions[index];
+        }
+
         function updateTelemetry(data) {
             // Speed (convert m/s to MPH if needed, or use as-is if already MPH)
             if ('speed' in data) {
@@ -240,6 +260,10 @@ INDEX_HTML = """<!DOCTYPE html>
             if ('alt' in data) {
                 document.getElementById('alt').textContent = data.alt.toFixed(1) + ' m';
             }
+            if ('track' in data) {
+                const track = data.track || 0;
+                document.getElementById('track').textContent = track.toFixed(0) + '° ' + degreesToCompass(track);
+            }
             if ('satellites' in data) {
                 document.getElementById('sats').textContent = data.satellites;
             }
@@ -249,6 +273,13 @@ INDEX_HTML = """<!DOCTYPE html>
             if ('hdop' in data) {
                 const hdop = data.hdop;
                 document.getElementById('hdop').textContent = hdop < 99 ? hdop.toFixed(1) : '--';
+            }
+
+            // Magnetometer (compass heading)
+            if ('heading' in data) {
+                const heading = data.heading || 0;
+                document.getElementById('compass-heading').textContent = degreesToCompass(heading);
+                document.getElementById('compass-degrees').textContent = heading.toFixed(0) + '°';
             }
 
             // G-Forces
