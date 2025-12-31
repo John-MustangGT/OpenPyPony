@@ -19,8 +19,8 @@ import busio
 import digitalio
 import time
 from sensors import (
-    LIS3DH, ATGM336H, PCF8523, SSD1306, SDCard, ESP01, MPU6050,
-    NullAccelerometer, NullGPS, NullDisplay, NullGyroscope
+    LIS3DH, ATGM336H, PCF8523, SSD1306, SDCard, ESP01, MPU6050, ICM20948,
+    NullAccelerometer, NullGPS, NullDisplay, NullGyroscope, NullMagnetometer
 )
 
 
@@ -50,6 +50,7 @@ class HardwareAbstractionLayer:
         # Device references (interfaces)
         self._accelerometer = None
         self._gyroscope = None
+        self._magnetometer = None
         self._gps = None
         self._rtc = None
         self._display = None
@@ -61,6 +62,7 @@ class HardwareAbstractionLayer:
             'board': 'Raspberry Pi Pico 2W',
             'accelerometer': None,
             'gyroscope': None,
+            'magnetometer': None,
             'gps': None,
             'rtc': None,
             'display': None,
@@ -208,12 +210,14 @@ class HardwareAbstractionLayer:
         if not self.i2c:
             print("  ✗ Accelerometer skipped (no I2C)")
             self._accelerometer = NullAccelerometer()
+            self._magnetometer = NullMagnetometer()
             return
 
         # Check if enabled in config
         if not self.config.get('sensors.accelerometer.enabled', True):
             print("  - Accelerometer disabled in config")
             self._accelerometer = NullAccelerometer()
+            self._magnetometer = NullMagnetometer()
             return
 
         try:
@@ -227,6 +231,9 @@ class HardwareAbstractionLayer:
                 accel_range = self.config.get('sensors.accelerometer.range', 2)
                 accel_rate = self.config.get('sensors.accelerometer.sample_rate', 100)
                 self._accelerometer.configure(accel_range, accel_rate)
+
+                # LIS3DH doesn't have gyroscope or magnetometer
+                self._magnetometer = NullMagnetometer()
 
                 self.manifest['accelerometer'] = f'LIS3DH @0x{accel_addr:02X}'
                 print(f"  ✓ Accelerometer detected (LIS3DH @0x{accel_addr:02X})")
@@ -248,18 +255,52 @@ class HardwareAbstractionLayer:
                     self.manifest['gyroscope'] = f'MPU6050 @0x{accel_addr:02X}'
                     print(f"  ✓ Gyroscope detected (MPU6050 @0x{accel_addr:02X})")
 
+                # MPU6050 doesn't have magnetometer
+                self._magnetometer = NullMagnetometer()
+
                 self.manifest['accelerometer'] = f'MPU6050 @0x{accel_addr:02X}'
                 print(f"  ✓ Accelerometer detected (MPU6050 @0x{accel_addr:02X})")
+
+            elif accel_type == 'ICM20948':
+                # ICM-20948 provides accelerometer, gyroscope, and magnetometer
+                self._accelerometer = ICM20948(self.i2c, address=accel_addr)
+
+                # Configure from settings
+                accel_range = self.config.get('sensors.accelerometer.range', 2)
+                accel_rate = self.config.get('sensors.accelerometer.sample_rate', 100)
+                self._accelerometer.configure(accel_range, accel_rate)
+
+                # Also configure gyroscope if enabled
+                if self.config.get('sensors.gyroscope.enabled', True):
+                    gyro_range = self.config.get('sensors.gyroscope.range', 250)
+                    self._accelerometer.configure_gyro(gyro_range)
+                    self._gyroscope = self._accelerometer  # Share the same ICM20948 instance
+                    self.manifest['gyroscope'] = f'ICM20948 @0x{accel_addr:02X}'
+                    print(f"  ✓ Gyroscope detected (ICM20948 @0x{accel_addr:02X})")
+
+                # Also configure magnetometer if enabled
+                if self.config.get('sensors.magnetometer.enabled', True):
+                    self._accelerometer.configure_magnetometer()
+                    self._magnetometer = self._accelerometer  # Share the same ICM20948 instance
+                    self.manifest['magnetometer'] = f'ICM20948 @0x{accel_addr:02X}'
+                    print(f"  ✓ Magnetometer detected (ICM20948 @0x{accel_addr:02X})")
+                else:
+                    self._magnetometer = NullMagnetometer()
+
+                self.manifest['accelerometer'] = f'ICM20948 @0x{accel_addr:02X}'
+                print(f"  ✓ Accelerometer detected (ICM20948 @0x{accel_addr:02X})")
 
             else:
                 print(f"  ✗ Unknown accelerometer type: {accel_type}")
                 self._accelerometer = NullAccelerometer()
+                self._magnetometer = NullMagnetometer()
 
         except Exception as e:
             print(f"  ✗ Accelerometer init failed: {e}")
             import traceback
             traceback.print_exception(e)
             self._accelerometer = NullAccelerometer()
+            self._magnetometer = NullMagnetometer()
     
     def _init_gps(self):
         """Initialize GPS"""

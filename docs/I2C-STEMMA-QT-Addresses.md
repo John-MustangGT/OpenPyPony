@@ -6,26 +6,73 @@ This document tracks all I2C devices connected to the STEMMA QT bus (GP4=SDA, GP
 
 | Address | Device | Component | Notes |
 |---------|--------|-----------|-------|
+| **0x18** | LIS3DH | 3-Axis Accelerometer | Adafruit LIS3DH (optional, original sensor) |
 | **0x3C** | SSD1306 | OLED Display (128x64) | PiCowbell Proto |
 | **0x68** | PCF8523 | Real-Time Clock (RTC) | PiCowbell Proto (built-in) |
-| **0x69** | MPU6050 | 6-Axis IMU (Accel + Gyro) | Adafruit STEMMA QT MPU-6050 (AD0 bridged) |
+| **0x69** | MPU6050 or ICM-20948 | 6-Axis or 9-Axis IMU | **Choose one** - both default to 0x69 |
+
+## Sensor Capabilities
+
+### LIS3DH (3-Axis Accelerometer)
+- **Address:** 0x18 or 0x19 (via SDO jumper)
+- **Features:** 3-axis accelerometer only
+- **Part:** Adafruit LIS3DH Breakout
+- **Status:** Original sensor, optional
+
+### MPU-6050 (6-Axis IMU)
+- **Address:** 0x68 or 0x69 (via AD0 jumper)
+- **Features:** 3-axis accelerometer + 3-axis gyroscope
+- **Part:** Adafruit MPU-6050 STEMMA QT (PID 3886)
+- **Note:** Requires AD0 jumper to avoid RTC conflict
+
+### ICM-20948 (9-Axis IMU)
+- **Address:** 0x68 or 0x69 (via AD0 jumper)
+- **Features:** 3-axis accelerometer + 3-axis gyroscope + 3-axis magnetometer (compass)
+- **Part:** Adafruit ICM-20948 STEMMA QT
+- **Note:** Most advanced option, includes compass/magnetometer
 
 ## Address Conflicts
 
-### Resolved: MPU6050 vs PCF8523 RTC
+### Resolved: MPU6050/ICM20948 vs PCF8523 RTC
 
-**Problem:** Both the Adafruit MPU-6050 and PiCowbell PCF8523 RTC default to address 0x68.
+**Problem:** The MPU-6050 and ICM-20948 both default to address 0x68, which conflicts with the PiCowbell PCF8523 RTC.
 
-**Solution:** Bridge the AD0 solder jumper on the back of the MPU-6050 board to change its address to 0x69.
+**Solution:** Bridge the AD0 solder jumper on the back of the MPU-6050 or ICM-20948 board to change its address to 0x69.
 
-**Configuration:**
+**Configuration Examples:**
+
+MPU-6050:
 ```toml
 [sensors.accelerometer]
 type = "MPU6050"
 address = 0x69  # Changed from default 0x68 to avoid RTC conflict
 range = 2
 sample_rate = 100
+
+[sensors.gyroscope]
+enabled = true
+range = 250
 ```
+
+ICM-20948:
+```toml
+[sensors.accelerometer]
+type = "ICM20948"
+address = 0x69  # Changed from default 0x68 to avoid RTC conflict
+range = 2
+sample_rate = 100
+
+[sensors.gyroscope]
+enabled = true
+range = 250
+
+[sensors.magnetometer]
+enabled = true
+```
+
+**Important:** You cannot use both MPU-6050 and ICM-20948 at the same time (they both use 0x69). Choose one based on your needs:
+- MPU-6050: Basic 6-axis IMU (accel + gyro)
+- ICM-20948: Advanced 9-axis IMU (accel + gyro + magnetometer/compass)
 
 ## Common I2C Addresses (7-bit)
 
@@ -66,6 +113,25 @@ The following addresses are currently **unused** and available for future device
 1. Locate the AD0 solder jumper on the back of the board
 2. Bridge the jumper pads with solder
 3. Update `settings.toml` with `address = 0x69`
+
+**Library Required:** `adafruit_mpu6050.mpy`, `adafruit_register/`, `adafruit_bus_device/`
+
+### Adafruit ICM-20948 STEMMA QT
+
+**Default Address:** 0x68
+**Alternate Address:** 0x69 (when AD0 jumper bridged)
+
+**To change address to 0x69:**
+1. Locate the AD0 solder jumper on the back of the board
+2. Bridge the jumper pads with solder
+3. Update `settings.toml` with `address = 0x69`
+
+**Library Required:** `adafruit_icm20x.mpy`, `adafruit_register/`, `adafruit_bus_device/`
+
+**Magnetometer Features:**
+- Provides compass heading (0-360°)
+- Magnetic field measurement in microteslas (µT)
+- Useful for navigation and orientation tracking
 
 ### PiCowbell Proto
 

@@ -76,22 +76,48 @@ class GyroscopeInterface:
         raise NotImplementedError("Subclass must implement get_rotation()")
 
 
+class MagnetometerInterface:
+    """Base interface for magnetometers (compass)"""
+
+    def read(self):
+        """
+        Read magnetometer data
+
+        Returns:
+            tuple: (x, y, z) in microteslas (µT) or None if read fails
+        """
+        raise NotImplementedError("Subclass must implement read()")
+
+    def configure(self):
+        """Configure magnetometer"""
+        raise NotImplementedError("Subclass must implement configure()")
+
+    def get_heading(self):
+        """
+        Get compass heading
+
+        Returns:
+            float: Heading in degrees (0-360) where 0 is North
+        """
+        raise NotImplementedError("Subclass must implement get_heading()")
+
+
 class GPSInterface:
     """Base interface for GPS modules"""
-    
+
     def update(self):
         """
         Update GPS data (call frequently)
-        
+
         Returns:
             bool: True if new valid data available
         """
         raise NotImplementedError("Subclass must implement update()")
-    
+
     def has_fix(self):
         """
         Check if GPS has valid fix
-        
+
         Returns:
             bool: True if valid fix
         """
@@ -570,6 +596,156 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
             return self.sensor.temperature
         except Exception as e:
             print(f"[MPU6050] Temperature read error: {e}")
+            return 0.0
+
+
+class ICM20948(AccelerometerInterface, GyroscopeInterface, MagnetometerInterface):
+    """ICM-20948 9-axis IMU (accelerometer + gyroscope + magnetometer) implementation"""
+
+    def __init__(self, i2c, address=0x69):
+        """
+        Initialize ICM-20948
+
+        Args:
+            i2c: I2C bus object
+            address: I2C address (0x68 or 0x69, default 0x69)
+        """
+        try:
+            import adafruit_icm20x
+        except ImportError:
+            raise ImportError(
+                "ICM20948 library not found!\n"
+                "Install adafruit_icm20x library to /lib/:\n"
+                "1. Download CircuitPython bundle from circuitpython.org/libraries\n"
+                "2. Copy 'adafruit_icm20x.mpy' to /lib/\n"
+                "3. Copy 'adafruit_register/' folder to /lib/\n"
+                "4. Copy 'adafruit_bus_device/' folder to /lib/"
+            )
+
+        self.sensor = adafruit_icm20x.ICM20948(i2c, address=address)
+
+        # Configure defaults
+        self.sensor.accelerometer_range = adafruit_icm20x.AccelRange.RANGE_2G
+        self.sensor.gyro_range = adafruit_icm20x.GyroRange.RANGE_250_DPS
+        self.sensor.magnetometer_data_rate = adafruit_icm20x.MagDataRate.RATE_100HZ
+
+        self._last_accel = (0.0, 0.0, 0.0)
+        self._last_gyro = (0.0, 0.0, 0.0)
+        self._last_mag = (0.0, 0.0, 0.0)
+
+        print(f"[ICM20948] Initialized at 0x{address:02X}")
+
+    def read(self):
+        """Read raw acceleration in m/s²"""
+        try:
+            x, y, z = self.sensor.acceleration
+            self._last_accel = (x, y, z)
+            return (x, y, z)
+        except Exception as e:
+            print(f"[ICM20948] Accel read error: {e}")
+            return self._last_accel
+
+    def configure(self, range_g=2, rate_hz=100):
+        """Configure accelerometer range"""
+        import adafruit_icm20x
+
+        # Set accelerometer range
+        range_map = {
+            2: adafruit_icm20x.AccelRange.RANGE_2G,
+            4: adafruit_icm20x.AccelRange.RANGE_4G,
+            8: adafruit_icm20x.AccelRange.RANGE_8G,
+            16: adafruit_icm20x.AccelRange.RANGE_16G
+        }
+
+        if range_g in range_map:
+            self.sensor.accelerometer_range = range_map[range_g]
+
+        print(f"[ICM20948] Accel configured: ±{range_g}g")
+
+    def get_gforce(self):
+        """Convert acceleration to g-force"""
+        x, y, z = self.read()
+        return (x / 9.81, y / 9.81, z / 9.81)
+
+    def read_gyro(self):
+        """Read raw gyroscope data in degrees/second"""
+        try:
+            x, y, z = self.sensor.gyro
+            self._last_gyro = (x, y, z)
+            return (x, y, z)
+        except Exception as e:
+            print(f"[ICM20948] Gyro read error: {e}")
+            return self._last_gyro
+
+    def configure_gyro(self, range_dps=250):
+        """Configure gyroscope range"""
+        import adafruit_icm20x
+
+        # Set gyroscope range
+        range_map = {
+            250: adafruit_icm20x.GyroRange.RANGE_250_DPS,
+            500: adafruit_icm20x.GyroRange.RANGE_500_DPS,
+            1000: adafruit_icm20x.GyroRange.RANGE_1000_DPS,
+            2000: adafruit_icm20x.GyroRange.RANGE_2000_DPS
+        }
+
+        if range_dps in range_map:
+            self.sensor.gyro_range = range_map[range_dps]
+
+        print(f"[ICM20948] Gyro configured: ±{range_dps}°/s")
+
+    def get_rotation(self):
+        """Get rotation rates in degrees/second"""
+        return self.read_gyro()
+
+    def read_magnetometer(self):
+        """Read raw magnetometer data in microteslas (µT)"""
+        try:
+            x, y, z = self.sensor.magnetic
+            self._last_mag = (x, y, z)
+            return (x, y, z)
+        except Exception as e:
+            print(f"[ICM20948] Magnetometer read error: {e}")
+            return self._last_mag
+
+    def configure_magnetometer(self):
+        """Configure magnetometer"""
+        import adafruit_icm20x
+
+        # Set magnetometer data rate to 100Hz
+        self.sensor.magnetometer_data_rate = adafruit_icm20x.MagDataRate.RATE_100HZ
+        print("[ICM20948] Magnetometer configured: 100Hz")
+
+    def get_heading(self):
+        """
+        Get compass heading in degrees
+
+        Returns:
+            float: Heading in degrees (0-360) where 0 is North
+        """
+        try:
+            import math
+            mx, my, mz = self.read_magnetometer()
+
+            # Calculate heading using atan2 (assumes sensor is level)
+            # This is a simple 2D compass calculation
+            heading = math.atan2(my, mx) * 180.0 / math.pi
+
+            # Normalize to 0-360
+            if heading < 0:
+                heading += 360
+
+            return heading
+        except Exception as e:
+            print(f"[ICM20948] Heading calculation error: {e}")
+            return 0.0
+
+    def get_temperature(self):
+        """Get temperature in Celsius"""
+        try:
+            return self.sensor.temperature
+        except Exception as e:
+            print(f"[ICM20948] Temperature read error: {e}")
             return 0.0
 
 
@@ -1575,6 +1751,19 @@ class NullGyroscope(GyroscopeInterface):
 
     def get_rotation(self):
         return (0.0, 0.0, 0.0)
+
+
+class NullMagnetometer(MagnetometerInterface):
+    """Stub magnetometer when disabled"""
+
+    def read(self):
+        return (0.0, 0.0, 0.0)
+
+    def configure(self):
+        pass
+
+    def get_heading(self):
+        return 0.0
 
 
 class NullGPS(GPSInterface):
