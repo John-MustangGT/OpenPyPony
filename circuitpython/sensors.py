@@ -416,16 +416,27 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
         try:
             print(f"[MPU6050] Initializing sensor at 0x{address:02X}...")
 
-            # Debug: Read WHO_AM_I and PWR_MGMT_1 BEFORE any initialization
+            # Debug: Read multiple registers to identify the chip
             while not i2c.try_lock():
                 pass
+
+            # Read WHO_AM_I (0x75)
             result_before = bytearray(1)
             i2c.writeto_then_readfrom(address, bytes([0x75]), result_before)
+
+            # Read PWR_MGMT_1 (0x6B)
             pwr_before = bytearray(1)
             i2c.writeto_then_readfrom(address, bytes([0x6B]), pwr_before)
+
+            # Read first 16 bytes of register space
+            registers = bytearray(16)
+            i2c.writeto_then_readfrom(address, bytes([0x00]), registers)
+
             i2c.unlock()
-            print(f"[MPU6050] WHO_AM_I before init: 0x{result_before[0]:02X}")
-            print(f"[MPU6050] PWR_MGMT_1 before init: 0x{pwr_before[0]:02X}")
+
+            print(f"[MPU6050] WHO_AM_I (0x75): 0x{result_before[0]:02X} (expected 0x68)")
+            print(f"[MPU6050] PWR_MGMT_1 (0x6B): 0x{pwr_before[0]:02X}")
+            print(f"[MPU6050] Regs 0x00-0x0F: {' '.join(f'{b:02X}' for b in registers)}")
 
             while not i2c.try_lock():
                 pass
