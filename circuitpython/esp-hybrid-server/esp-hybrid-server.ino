@@ -73,6 +73,10 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <div class="metric"><span class="metric-label">X</span><span class="metric-value" id="gx">+0.0</span></div>
 <div class="metric"><span class="metric-label">Y</span><span class="metric-value" id="gy">+0.0</span></div>
 <div class="metric"><span class="metric-label">Z</span><span class="metric-value" id="gz">+1.0</span></div></div>
+<div class="card"><h2>Gyroscope</h2>
+<div class="metric"><span class="metric-label">Roll</span><span class="metric-value" id="rx">+0.0</span></div>
+<div class="metric"><span class="metric-label">Pitch</span><span class="metric-value" id="ry">+0.0</span></div>
+<div class="metric"><span class="metric-label">Yaw</span><span class="metric-value" id="rz">+0.0</span></div></div>
 </div>
 <div class="card" style="grid-column:1/-1"><h2>Session Control</h2>
 <div style="display:grid;grid-template-columns:1fr 1fr;gap:15px;margin-bottom:15px">
@@ -99,7 +103,8 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <div><strong>Pico Firmware:</strong> <span id="pico-version">Loading...</span></div>
 </div></div>
 </div><script>
-function loadFiles(){fetch('/api/files').then(r=>r.json()).then(files=>{let html='<table style="width:100%;border-collapse:collapse">';html+='<tr style="border-bottom:2px solid #667eea"><th style="text-align:left;padding:8px">Session</th><th style="text-align:left;padding:8px">File</th><th style="text-align:right;padding:8px">Size</th><th style="text-align:center;padding:8px">Download</th></tr>';files.forEach(f=>{const sizeMB=(f.size/1024/1024).toFixed(2);const sizeKB=(f.size/1024).toFixed(1);const size=f.size>1024*1024?sizeMB+' MB':sizeKB+' KB';html+=`<tr style="border-bottom:1px solid #3a3a3a"><td style="padding:8px">#${f.session}</td><td style="padding:8px">${f.filename}</td><td style="text-align:right;padding:8px">${size}</td><td style="text-align:center;padding:8px"><a href="/api/download?file=${f.filename}" download="${f.filename}" style="background:#667eea;color:white;text-decoration:none;padding:4px 12px;border-radius:3px;font-size:0.9em">⬇</a></td></tr>`});html+='</table>';document.getElementById('files').innerHTML=html}).catch(()=>{document.getElementById('files').innerHTML='<p style="color:#ff7d7d">Error loading files</p>'})}
+function downloadFile(filename){if(!confirm('Download will stop logging/streaming.\n\nYou must manually restart the session after download completes.\n\nContinue with download?')){return}document.getElementById('status').textContent='Download Mode - Logging Stopped';document.getElementById('status').className='status disconnected';window.location.href='/api/download?file='+encodeURIComponent(filename);setTimeout(()=>{alert('Download complete.\n\nPlease click "Start" to resume logging.');loadSessionInfo()},2000)}
+function loadFiles(){fetch('/api/files').then(r=>r.json()).then(files=>{let html='<table style="width:100%;border-collapse:collapse">';html+='<tr style="border-bottom:2px solid #667eea"><th style="text-align:left;padding:8px">Session</th><th style="text-align:left;padding:8px">File</th><th style="text-align:right;padding:8px">Size</th><th style="text-align:center;padding:8px">Download</th></tr>';files.forEach(f=>{const sizeMB=(f.size/1024/1024).toFixed(2);const sizeKB=(f.size/1024).toFixed(1);const size=f.size>1024*1024?sizeMB+' MB':sizeKB+' KB';html+=`<tr style="border-bottom:1px solid #3a3a3a"><td style="padding:8px">#${f.session}</td><td style="padding:8px">${f.filename}</td><td style="text-align:right;padding:8px">${size}</td><td style="text-align:center;padding:8px"><button onclick="downloadFile('${f.filename}')" style="background:#667eea;color:white;border:none;padding:4px 12px;border-radius:3px;font-size:0.9em;cursor:pointer">⬇</button></td></tr>`});html+='</table>';document.getElementById('files').innerHTML=html}).catch(()=>{document.getElementById('files').innerHTML='<p style="color:#ff7d7d">Error loading files</p>'})}
 function loadVersions(){fetch('/api/version').then(r=>r.json()).then(v=>{document.getElementById('esp-version').textContent=v.esp_version+' ('+v.esp_git+')';document.getElementById('pico-version').textContent=v.pico_version+' ('+v.pico_git+')'}).catch(()=>{document.getElementById('esp-version').textContent='Error';document.getElementById('pico-version').textContent='Error'})}
 function loadSessionInfo(){fetch('/api/session/info').then(r=>r.json()).then(s=>{document.getElementById('session-num').textContent='#'+s.session_num;document.getElementById('session-status').textContent=s.running?'Running':'Stopped';document.getElementById('session-status').style.color=s.running?'#7dff7d':'#ff7d7d';document.getElementById('input-driver').value=s.driver;document.getElementById('input-vehicle').value=s.vehicle;document.getElementById('input-track').value=s.track;document.getElementById('btn-start').disabled=s.running;document.getElementById('btn-stop').disabled=!s.running}).catch(()=>console.error('Failed to load session info'))}
 function sessionStart(){fetch('/api/session/start',{method:'POST'}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}
@@ -115,10 +120,13 @@ if(d.speed)document.getElementById('speed').textContent=d.speed.toFixed(1);
 if(d.lat)document.getElementById('lat').textContent=d.lat.toFixed(6);
 if(d.lon)document.getElementById('lon').textContent=d.lon.toFixed(6);
 if(d.satellites)document.getElementById('sats').textContent=d.satellites;
-if(d.gx)document.getElementById('gx').textContent=(d.gx>=0?'+':'')+d.gx.toFixed(2);
-if(d.gy)document.getElementById('gy').textContent=(d.gy>=0?'+':'')+d.gy.toFixed(2);
-if(d.session_status){document.getElementById('session-num').textContent='#'+d.session_status.session_num;document.getElementById('session-status').textContent=d.session_status.running?'Running':'Stopped';document.getElementById('session-status').style.color=d.session_status.running?'#7dff7d':'#ff7d7d';document.getElementById('btn-start').disabled=d.session_status.running;document.getElementById('btn-stop').disabled=!d.session_status.running}
-if(d.gz)document.getElementById('gz').textContent=(d.gz>=0?'+':'')+d.gz.toFixed(2)};
+if(d.gx!==undefined)document.getElementById('gx').textContent=(d.gx>=0?'+':'')+d.gx.toFixed(2);
+if(d.gy!==undefined)document.getElementById('gy').textContent=(d.gy>=0?'+':'')+d.gy.toFixed(2);
+if(d.gz!==undefined)document.getElementById('gz').textContent=(d.gz>=0?'+':'')+d.gz.toFixed(2);
+if(d.rx!==undefined)document.getElementById('rx').textContent=(d.rx>=0?'+':'')+d.rx.toFixed(1);
+if(d.ry!==undefined)document.getElementById('ry').textContent=(d.ry>=0?'+':'')+d.ry.toFixed(1);
+if(d.rz!==undefined)document.getElementById('rz').textContent=(d.rz>=0?'+':'')+d.rz.toFixed(1);
+if(d.session_status){document.getElementById('session-num').textContent='#'+d.session_status.session_num;document.getElementById('session-status').textContent=d.session_status.running?'Running':'Stopped';document.getElementById('session-status').style.color=d.session_status.running?'#7dff7d':'#ff7d7d';document.getElementById('btn-start').disabled=d.session_status.running;document.getElementById('btn-stop').disabled=!d.session_status.running}};
 ws.onclose=()=>{document.getElementById('status').textContent='Disconnected';document.getElementById('status').className='status disconnected';setTimeout(()=>location.reload(),2000)};
 </script></body></html>
 )rawliteral";
@@ -383,6 +391,10 @@ void setupHTTPServer() {
         }
 
         String filename = request->getParam("file")->value();
+
+        // Stop session before downloading to avoid conflicts
+        sendLine("ESP:session_stop");
+        delay(100);  // Give Pico time to process stop command
 
         // Reset download state
         downloadingFile = true;
