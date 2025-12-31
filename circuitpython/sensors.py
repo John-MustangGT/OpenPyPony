@@ -410,6 +410,17 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
                 "4. Copy 'adafruit_bus_device/' folder to /lib/"
             )
 
+        # Wake up MPU6050 from sleep mode (it powers up asleep)
+        # Write 0x00 to PWR_MGMT_1 register (0x6B) to wake up
+        import time
+        try:
+            print(f"[MPU6050] Waking up sensor at 0x{address:02X}...")
+            i2c.writeto(address, bytes([0x6B, 0x00]))  # PWR_MGMT_1 register
+            time.sleep(0.1)  # Give sensor time to wake up
+        except Exception as e:
+            print(f"[MPU6050] Wake-up failed: {e}")
+            raise
+
         self.sensor = adafruit_mpu6050.MPU6050(i2c, address=address)
 
         # Configure defaults
