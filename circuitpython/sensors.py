@@ -186,6 +186,16 @@ class GPSInterface:
         """
         raise NotImplementedError("Subclass must implement get_hdop()")
 
+    def get_track(self):
+        """
+        Get GPS track angle (course over ground)
+
+        Returns:
+            float: Track angle in degrees (0-360) where 0 is North, or None if unavailable
+                  This is the direction of movement, not the direction the vehicle is pointing
+        """
+        raise NotImplementedError("Subclass must implement get_track()")
+
 
 class RTCInterface:
     """Base interface for Real-Time Clocks"""
@@ -866,6 +876,19 @@ class ATGM336H(GPSInterface):
             float: HDOP value (lower is better, <1=excellent, 1-2=good, 2-5=moderate, 5-10=fair, >10=poor)
         """
         return self.gps.hdop
+
+    def get_track(self):
+        """
+        Get GPS track angle (course over ground)
+
+        Returns:
+            float: Track angle in degrees (0-360) where 0 is North, or None if unavailable
+        """
+        if not self.gps.has_fix:
+            return None
+
+        # track_angle_deg gives course over ground in degrees
+        return self.gps.track_angle_deg
 
     def configure_rate(self, rate_ms=1000):
         """
@@ -1794,6 +1817,9 @@ class NullGPS(GPSInterface):
         return 'No Fix'
 
     def get_hdop(self):
+        return None
+
+    def get_track(self):
         return None
 
 

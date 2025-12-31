@@ -331,12 +331,14 @@ try:
         # Prepare data for logging (handle None values from GPS)
         position = gps.get_position() if gps.has_fix() else (0.0, 0.0, 0.0)
         speed = gps.get_speed() if gps.has_fix() else 0.0
+        track = gps.get_track() if gps.has_fix() else None
 
         gps_data = {
             'lat': position[0] or 0.0,
             'lon': position[1] or 0.0,
             'alt': position[2] or 0.0,
             'speed': speed or 0.0,
+            'track': track,  # GPS track (course over ground) - direction of movement
             'satellites': gps.get_satellites() or 0,
             'fix_type': gps.get_fix_type(),
             'hdop': gps.get_hdop() or 99.9
@@ -423,7 +425,8 @@ try:
                 'lon': gps_data['lon'],
                 'alt': gps_data['alt'],
                 'speed': gps_data['speed'] * 2.237,  # Convert m/s to MPH for display
-                'heading': heading,  # Compass heading from magnetometer (0-360°)
+                'track': gps_data['track'] if gps_data['track'] is not None else 0.0,  # GPS track (COG) - direction of movement
+                'heading': heading,  # Compass heading from magnetometer - direction vehicle is pointing
                 'satellites': gps_data['satellites'],
                 'fix_type': gps_data['fix_type'],
                 'hdop': gps_data['hdop'],
