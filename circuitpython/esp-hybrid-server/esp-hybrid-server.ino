@@ -68,7 +68,9 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(<!DOCTYPE html>
 <div class="card"><h2>GPS</h2>
 <div class="metric"><span class="metric-label">Lat</span><span class="metric-value" id="lat">--</span></div>
 <div class="metric"><span class="metric-label">Lon</span><span class="metric-value" id="lon">--</span></div>
+<div class="metric"><span class="metric-label">Track</span><span class="metric-value" id="track">--</span></div>
 <div class="metric"><span class="metric-label">Sats</span><span class="metric-value" id="sats">0</span></div></div>
+<div class="card"><h2>Magnetometer</h2><div style="text-align:center;padding:20px 0"><div style="font-size:3em;font-weight:bold;color:#667eea;margin-bottom:10px" id="heading">--</div><div style="font-size:1.2em;color:#999;font-family:'Courier New',monospace" id="degrees">---°</div></div></div>
 <div class="card"><h2>G-Forces</h2>
 <div class="metric"><span class="metric-label">X</span><span class="metric-value" id="gx">+0.0</span></div>
 <div class="metric"><span class="metric-label">Y</span><span class="metric-value" id="gy">+0.0</span></div>
@@ -111,6 +113,7 @@ function sessionStart(){fetch('/api/session/start',{method:'POST'}).then(()=>set
 function sessionStop(){fetch('/api/session/stop',{method:'POST'}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}
 function sessionRestart(){if(confirm('Restart session? Current session will be closed and a new one will begin.')){fetch('/api/session/restart',{method:'POST'}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}}
 function updateSession(){const driver=document.getElementById('input-driver').value;const vehicle=document.getElementById('input-vehicle').value;const track=document.getElementById('input-track').value;if(!driver&&!vehicle&&!track){alert('Please enter at least one field');return}if(confirm('Save session info and restart? Current session will be closed and a new one will begin with the updated information.')){const formData=new FormData();if(driver)formData.append('driver',driver);if(vehicle)formData.append('vehicle',vehicle);if(track)formData.append('track',track);fetch('/api/session/update',{method:'POST',body:formData}).then(()=>setTimeout(loadSessionInfo,500)).catch(e=>alert('Error: '+e))}}
+function degToCompass(deg){const dirs=['N','NE','E','SE','S','SW','W','NW'];return dirs[Math.round((deg%360)/45)%8]}
 window.addEventListener('load',()=>{loadFiles();loadVersions();loadSessionInfo()});
 let ws=new WebSocket('ws://'+window.location.hostname+'/ws');
 ws.onopen=()=>{document.getElementById('status').textContent='Connected';document.getElementById('status').className='status connected'};
@@ -119,6 +122,8 @@ if(d.timestamp){const date=new Date(d.timestamp*1000);document.getElementById('t
 if(d.speed)document.getElementById('speed').textContent=d.speed.toFixed(1);
 if(d.lat)document.getElementById('lat').textContent=d.lat.toFixed(6);
 if(d.lon)document.getElementById('lon').textContent=d.lon.toFixed(6);
+if(d.track!==undefined)document.getElementById('track').textContent=d.track.toFixed(0)+'° '+degToCompass(d.track);
+if(d.heading!==undefined){document.getElementById('heading').textContent=degToCompass(d.heading);document.getElementById('degrees').textContent=d.heading.toFixed(0)+'°'}
 if(d.satellites)document.getElementById('sats').textContent=d.satellites;
 if(d.gx!==undefined)document.getElementById('gx').textContent=(d.gx>=0?'+':'')+d.gx.toFixed(2);
 if(d.gy!==undefined)document.getElementById('gy').textContent=(d.gy>=0?'+':'')+d.gy.toFixed(2);
