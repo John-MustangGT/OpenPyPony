@@ -257,6 +257,8 @@ class HardwareAbstractionLayer:
 
         except Exception as e:
             print(f"  ✗ Accelerometer init failed: {e}")
+            import traceback
+            traceback.print_exception(e)
             self._accelerometer = NullAccelerometer()
     
     def _init_gps(self):
