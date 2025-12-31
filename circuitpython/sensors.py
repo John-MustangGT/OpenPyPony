@@ -411,19 +411,36 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
             )
 
         # Wake up MPU6050 from sleep mode (it powers up asleep)
-        # Write 0x00 to PWR_MGMT_1 register (0x6B) to wake up
+        # Full initialization sequence for reliable startup
         import time
         try:
-            print(f"[MPU6050] Waking up sensor at 0x{address:02X}...")
+            print(f"[MPU6050] Initializing sensor at 0x{address:02X}...")
             while not i2c.try_lock():
                 pass
-            i2c.writeto(address, bytes([0x6B, 0x00]))  # PWR_MGMT_1 register
+
+            # Step 1: Reset device (PWR_MGMT_1 register 0x6B, bit 7 = DEVICE_RESET)
+            i2c.writeto(address, bytes([0x6B, 0x80]))
             i2c.unlock()
-            time.sleep(0.1)  # Give sensor time to wake up
+            time.sleep(0.2)  # Wait for reset to complete
+
+            # Step 2: Wake up device (PWR_MGMT_1 register 0x6B = 0x00)
+            while not i2c.try_lock():
+                pass
+            i2c.writeto(address, bytes([0x6B, 0x00]))
+            i2c.unlock()
+            time.sleep(0.1)  # Wait for sensor to stabilize
+
+            # Step 3: Set clock source to PLL with X-axis gyro reference
+            while not i2c.try_lock():
+                pass
+            i2c.writeto(address, bytes([0x6B, 0x01]))
+            i2c.unlock()
+            time.sleep(0.05)
+
         except Exception as e:
             if i2c.try_lock():  # Unlock if we had it locked
                 i2c.unlock()
-            print(f"[MPU6050] Wake-up failed: {e}")
+            print(f"[MPU6050] Initialization failed: {e}")
             raise
 
         self.sensor = adafruit_mpu6050.MPU6050(i2c, address=address)
