@@ -415,6 +415,18 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
         import time
         try:
             print(f"[MPU6050] Initializing sensor at 0x{address:02X}...")
+
+            # Debug: Read WHO_AM_I and PWR_MGMT_1 BEFORE any initialization
+            while not i2c.try_lock():
+                pass
+            result_before = bytearray(1)
+            i2c.writeto_then_readfrom(address, bytes([0x75]), result_before)
+            pwr_before = bytearray(1)
+            i2c.writeto_then_readfrom(address, bytes([0x6B]), pwr_before)
+            i2c.unlock()
+            print(f"[MPU6050] WHO_AM_I before init: 0x{result_before[0]:02X}")
+            print(f"[MPU6050] PWR_MGMT_1 before init: 0x{pwr_before[0]:02X}")
+
             while not i2c.try_lock():
                 pass
 
