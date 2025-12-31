@@ -436,7 +436,8 @@ class MPU6050(AccelerometerInterface, GyroscopeInterface):
 
             print(f"[MPU6050] WHO_AM_I (0x75): 0x{result_before[0]:02X} (expected 0x68)")
             print(f"[MPU6050] PWR_MGMT_1 (0x6B): 0x{pwr_before[0]:02X}")
-            print(f"[MPU6050] Regs 0x00-0x0F: {' '.join(f'{b:02X}' for b in registers)}")
+            reg_str = ' '.join(f'{byte:02X}' for byte in registers)
+            print(f"[MPU6050] Regs 0x00-0x0F: {reg_str}")
 
             while not i2c.try_lock():
                 pass
