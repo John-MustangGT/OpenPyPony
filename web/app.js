@@ -17,8 +17,10 @@ class OpenPonyLogger {
         // Real-time data from API
         this.liveData = {
             accel: { gx: 0, gy: 0, gz: 0, g_total: 1.0 },
-            gps: { 
-                lat: 0, lon: 0, alt: 0, speed: 0, heading: 0,
+            gps: {
+                lat: 0, lon: 0, alt: 0, speed: 0,
+                track: 0,    // GPS track (course over ground) - direction of movement
+                heading: 0,  // Compass heading from magnetometer - direction pointing
                 satellites: 0, fix_quality: 0, hdop: 99.9
             },
             system: { uptime: 0, time_source: 'RTC' }
@@ -39,9 +41,16 @@ class OpenPonyLogger {
         this.setupConfig();
         this.updateConnectionStatus();
         this.applyStartupTab();
-        
+
         // Start fetching real data
         this.startRealDataFetch();
+    }
+
+    // Helper function to convert degrees to compass direction
+    degreesToCompass(degrees) {
+        const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+        const index = Math.round(((degrees % 360) / 45)) % 8;
+        return directions[index];
     }
 
     // Real Data Fetching
@@ -193,29 +202,37 @@ class OpenPonyLogger {
     // Update GPS display with real data
     updateGPSFromRealData() {
         if (!this.liveData.gps) return;
-        
+
         const gps = this.liveData.gps;
-        
-        // Update display
+
+        // Update GPS position display
         document.getElementById('gpsLat').textContent = gps.lat.toFixed(6) + '°';
         document.getElementById('gpsLon').textContent = gps.lon.toFixed(6) + '°';
         document.getElementById('gpsAlt').textContent = gps.alt.toFixed(0) + ' ft';
-        document.getElementById('gpsHeading').textContent = gps.heading.toFixed(0) + '°';
-        
-        // Convert knots to MPH (1 knot = 1.15078 mph)
-        const speedMph = gps.speed * 1.15078;
+
+        // GPS Track (Course Over Ground) - direction of movement
+        const track = gps.track || 0;
+        document.getElementById('gpsTrack').textContent = track.toFixed(0) + '° ' + this.degreesToCompass(track);
+
+        // Magnetometer compass heading - direction vehicle is pointing
+        const heading = gps.heading || 0;
+        document.getElementById('compassHeading').textContent = this.degreesToCompass(heading);
+        document.getElementById('compassDegrees').textContent = heading.toFixed(0) + '°';
+
+        // Speed is already in MPH from telemetry (converted in CircuitPython)
+        const speedMph = gps.speed || 0;
         document.getElementById('gpsSpeed').textContent = speedMph.toFixed(1) + ' MPH';
-        
+
         if (speedMph > this.gpsData.maxSpeed) {
             this.gpsData.maxSpeed = speedMph;
             document.getElementById('gpsMaxSpeed').textContent = speedMph.toFixed(1) + ' MPH';
         }
-        
-        // Update GPS data for drawing
+
+        // Update GPS data for drawing (use track for movement indicator on map)
         this.gpsData.lat = gps.lat;
         this.gpsData.lon = gps.lon;
         this.gpsData.alt = gps.alt;
-        this.gpsData.heading = gps.heading;
+        this.gpsData.heading = track;  // Use track (COG) for movement arrow on map
         this.gpsData.speed = speedMph;
     }
 
