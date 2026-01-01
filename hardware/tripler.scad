@@ -22,31 +22,37 @@ font_size = 5;
 text_height = 2;
 
 tripler();
+outside=TRIPLER;
+//                translate([0,0,0]) linear_extrude(height=5, scale=[1.1,1.0])
+//                     square([outside[0],outside[1]]-[23,-8], center=true);
 //topPlate();
 //bottomPlate();
 
 //tripler
-module tripler() {
+module tripler(baseSize=TRIPLER) {
 translate([0,0,0]) {
-        outside = TRIPLER+[3,3,5];
-        inside  = outside-[2,2,3.5];
-        pinHeight = 3.5;
+        outside = baseSize+[3,3,5];
+        inside  = outside-[2,2,0];
+        pinHeight = 5;
         union() {
             difference() {
                 roundedcube_corners(outside, center=true, radius = 1.0);
-                translate([0,0,+2])
+                translate([0,0,+1.5])
                     roundedcube_corners(inside, center=true, radius = 1.0);
-                translate([-23,0,-2])
-                    roundedcube_corners(inside-[58,5,0], center=true, radius = 1.0);
-                translate([23,0,-2])
-                    roundedcube_corners(inside-[58,5,0], center=true, radius = 1.0);           
-//                translate([0,0,+5])
-//                     cube(outside-[25,-8,0], center=true);
+                translate([-22,0,-2])
+                    roundedcube_corners(inside-[57,5,0], center=true, radius = 1.0);
+                translate([22,0,-2])
+                    roundedcube_corners(inside-[57,5,0], center=true, radius = 1.0);           
+                translate([0,0,-2]) linear_extrude(height=8, scale=[1.1,1.0])
+                     square([outside[0],outside[1]]-[23,-8], center=true);
+                translate([0,0,-2]) linear_extrude(height=8, scale=[1.0,1.1])
+                     square([outside[0],outside[1]]-[-8,23], center=true);
+                     //cube(outside-[25,-8,0], center=true);
             }
-            pin([45.72,23.495,0], h=pinHeight);
-            pin([-45.72,23.495,0], h=pinHeight);
-            pin([45.72,-23.495,0], h=pinHeight);
-            pin([-45.72,-23.495,0], h=pinHeight);
+            pin([45.72,23.495,-2], h=pinHeight);
+            pin([-45.72,23.495,-2], h=pinHeight);
+            pin([45.72,-23.495,-2], h=pinHeight);
+            pin([-45.72,-23.495,-2], h=pinHeight);
 
         }
     }
