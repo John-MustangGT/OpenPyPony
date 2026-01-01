@@ -28,32 +28,25 @@ tripler();
 //tripler
 module tripler() {
 translate([0,0,0]) {
+        outside = TRIPLER+[3,3,5];
+        inside  = outside-[2,2,3.5];
+        pinHeight = 3.5;
         union() {
             difference() {
-                roundedcube_corners(TRIPLER+[2.5,2.5,2], center=true, radius = 1.0);
+                roundedcube_corners(outside, center=true, radius = 1.0);
                 translate([0,0,+2])
-                    roundedcube_corners(TRIPLER+[0.5,0.5,2], center=true, radius = 1.0);
-                
-//                // Raspberry Pi Pico 2w
-//                translate(PICOloc)
-//                    cutout2(size=PICO, thickness=4);
-//                // Adafruit Picowbell Adatalogger
-//                translate(COWBELLloc)
-//                    cutout2(size=COWBELL, thickness=4);
-//                // Teyleten ATGM336H GPS
-//                translate(GPSloc)
-//                    cutout2(size=GPS, thickness=4); 
-//                // Adafruit LIS3DH STEMMA Breakout
-//                translate(ACCloc)
-//                    cutout2(size=ACC, thickness=4);
-//                 // Geekstory ESP=01 Breakout
-//                translate(ESPloc)
-//                    cutout2(size=ESP, thickness=4);
+                    roundedcube_corners(inside, center=true, radius = 1.0);
+                translate([-23,0,-2])
+                    roundedcube_corners(inside-[58,5,0], center=true, radius = 1.0);
+                translate([23,0,-2])
+                    roundedcube_corners(inside-[58,5,0], center=true, radius = 1.0);           
+//                translate([0,0,+5])
+//                     cube(outside-[25,-8,0], center=true);
             }
-            pin([45.72,23.495,0]);
-            pin([-45.72,23.495,0]);
-            pin([45.72,-23.495,0]);
-            pin([-45.72,-23.495,0]);
+            pin([45.72,23.495,0], h=pinHeight);
+            pin([-45.72,23.495,0], h=pinHeight);
+            pin([45.72,-23.495,0], h=pinHeight);
+            pin([-45.72,-23.495,0], h=pinHeight);
 
         }
     }
