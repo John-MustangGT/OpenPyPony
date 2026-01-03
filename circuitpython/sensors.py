@@ -912,11 +912,12 @@ class PA1010D(GPSInterface):
 
         Args:
             i2c: I2C bus object
-            address: I2C address (default 0x10)
+            address: I2C address (default 0x10, fixed - only for documentation)
         """
         import adafruit_gps
 
-        self.gps = adafruit_gps.GPS(i2c, debug=False, address=address)
+        # Note: adafruit_gps library uses fixed address 0x10 for I2C, no address parameter
+        self.gps = adafruit_gps.GPS(i2c, debug=False)
 
         # Configure GPS - PA1010D uses same MTK commands as ATGM336H
         self.gps.send_command(b'PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA
