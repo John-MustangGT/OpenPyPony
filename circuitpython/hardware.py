@@ -19,7 +19,7 @@ import busio
 import digitalio
 import time
 from sensors import (
-    LIS3DH, ATGM336H, PCF8523, SSD1306, SDCard, ESP01, MPU6050, ICM20948,
+    LIS3DH, ATGM336H, PA1010D, PCF8523, SSD1306, SDCard, ESP01, MPU6050, ICM20948,
     NullAccelerometer, NullGPS, NullDisplay, NullGyroscope, NullMagnetometer
 )
 
@@ -304,11 +304,6 @@ class HardwareAbstractionLayer:
     
     def _init_gps(self):
         """Initialize GPS"""
-        if not self.uart_gps:
-            print("  ✗ GPS skipped (no UART)")
-            self._gps = NullGPS()
-            return
-
         # Check if enabled in config
         if not self.config.get('gps.enabled', True):
             print("  - GPS disabled in config")
@@ -319,6 +314,12 @@ class HardwareAbstractionLayer:
             gps_type = self.config.get('gps.type', 'ATGM336H')
 
             if gps_type == 'ATGM336H':
+                # UART GPS
+                if not self.uart_gps:
+                    print("  ✗ GPS skipped (ATGM336H requires UART)")
+                    self._gps = NullGPS()
+                    return
+
                 self._gps = ATGM336H(self.uart_gps)
 
                 # Configure update rate
@@ -327,6 +328,24 @@ class HardwareAbstractionLayer:
 
                 self.manifest['gps'] = 'ATGM336H (UART1)'
                 print(f"  ✓ GPS detected (ATGM336H, {1000/gps_rate:.1f}Hz)")
+
+            elif gps_type == 'PA1010D':
+                # I2C GPS
+                if not self.i2c:
+                    print("  ✗ GPS skipped (PA1010D requires I2C)")
+                    self._gps = NullGPS()
+                    return
+
+                gps_addr = self.config.get('gps.address', 0x10)
+                self._gps = PA1010D(self.i2c, address=gps_addr)
+
+                # Configure update rate
+                gps_rate = self.config.get('gps.update_rate', 1000)
+                self._gps.configure_rate(gps_rate)
+
+                self.manifest['gps'] = f'PA1010D @0x{gps_addr:02X} (I2C)'
+                print(f"  ✓ GPS detected (PA1010D @0x{gps_addr:02X}, {1000/gps_rate:.1f}Hz)")
+
             else:
                 print(f"  ✗ Unknown GPS type: {gps_type}")
                 self._gps = NullGPS()

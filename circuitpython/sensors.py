@@ -903,6 +903,151 @@ class ATGM336H(GPSInterface):
         print(f"[ATGM336H] Update rate: {rate_ms}ms ({1000/rate_ms:.1f}Hz)")
 
 
+class PA1010D(GPSInterface):
+    """PA1010D GPS module implementation (I2C or UART)"""
+
+    def __init__(self, i2c, address=0x10):
+        """
+        Initialize PA1010D GPS over I2C
+
+        Args:
+            i2c: I2C bus object
+            address: I2C address (default 0x10)
+        """
+        import adafruit_gps
+
+        self.gps = adafruit_gps.GPS(i2c, debug=False, address=address)
+
+        # Configure GPS - PA1010D uses same MTK commands as ATGM336H
+        self.gps.send_command(b'PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA
+        self.gps.send_command(b'PMTK220,1000')  # 1Hz update rate
+
+        self._last_update = 0
+
+        print(f"[PA1010D] Initialized at 0x{address:02X}")
+
+    def update(self):
+        """
+        Update GPS data
+
+        Returns:
+            bool: True if new valid data received
+        """
+        # Update GPS data (with error handling for malformed NMEA sentences)
+        try:
+            self.gps.update()
+        except (ValueError, RuntimeError) as e:
+            # GPS occasionally sends malformed NMEA data - ignore and continue
+            # This prevents crashes during track sessions from corrupted sentences
+            return False
+
+        # Check if we have new data
+        if self.gps.has_fix:
+            current_time = time.monotonic()
+            if current_time - self._last_update >= 0.1:  # Throttle updates
+                self._last_update = current_time
+                return True
+
+        return False
+
+    def has_fix(self):
+        """Check if GPS has valid fix"""
+        return self.gps.has_fix
+
+    def get_time(self):
+        """Get GPS time as struct_time"""
+        if not self.gps.has_fix:
+            return None
+        return self.gps.timestamp_utc
+
+    def get_position(self):
+        """Get GPS position (lat, lon, alt)"""
+        if not self.gps.has_fix:
+            return (None, None, None)
+
+        return (
+            self.gps.latitude,
+            self.gps.longitude,
+            self.gps.altitude_m
+        )
+
+    def get_speed(self):
+        """Get GPS speed in m/s"""
+        if not self.gps.has_fix:
+            return None
+
+        # Convert knots to m/s
+        if self.gps.speed_knots is not None:
+            return self.gps.speed_knots * 0.514444
+        return None
+
+    def get_satellites(self):
+        """Get number of satellites"""
+        return self.gps.satellites or 0
+
+    def get_fix_quality(self):
+        """
+        Get GPS fix quality
+
+        Returns:
+            int: Fix quality (0=no fix, 1=GPS fix, 2=DGPS fix)
+        """
+        return self.gps.fix_quality or 0
+
+    def get_fix_type(self):
+        """
+        Get GPS fix type (2D/3D)
+
+        Returns:
+            str: Fix type ('No Fix', '2D', '3D')
+        """
+        if not self.gps.has_fix:
+            return 'No Fix'
+
+        # fix_quality_3d: 1=no fix, 2=2D fix, 3=3D fix
+        fix_3d = self.gps.fix_quality_3d or 1
+        if fix_3d == 3:
+            return '3D'
+        elif fix_3d == 2:
+            return '2D'
+        else:
+            return 'No Fix'
+
+    def get_hdop(self):
+        """
+        Get Horizontal Dilution of Precision
+
+        Returns:
+            float: HDOP value (lower is better, <1=excellent, 1-2=good, 2-5=moderate, 5-10=fair, >10=poor)
+        """
+        return self.gps.hdop
+
+    def get_track(self):
+        """
+        Get GPS track angle (course over ground)
+
+        Returns:
+            float: Track angle in degrees (0-360) where 0 is North, or None if unavailable
+        """
+        if not self.gps.has_fix:
+            return None
+
+        # track_angle_deg gives course over ground in degrees
+        return self.gps.track_angle_deg
+
+    def configure_rate(self, rate_ms=1000):
+        """
+        Configure GPS update rate
+
+        Args:
+            rate_ms: Update period in milliseconds (200-10000)
+        """
+        rate_ms = max(200, min(10000, rate_ms))
+        cmd = f'PMTK220,{rate_ms}'.encode()
+        self.gps.send_command(cmd)
+        print(f"[PA1010D] Update rate: {rate_ms}ms ({1000/rate_ms:.1f}Hz)")
+
+
 class PCF8523(RTCInterface):
     """PCF8523 Real-Time Clock implementation"""
     

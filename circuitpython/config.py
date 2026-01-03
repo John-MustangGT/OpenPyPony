@@ -161,6 +161,8 @@ class Config:
             'sensors.gyroscope.range': 250,
             'gps.enabled': True,
             'gps.type': 'ATGM336H',
+            'gps.address': 0x10,
+            'gps.update_rate': 1000,
             'radio.mode': 'ap',
             'radio.ssid': 'OpenPonyLogger',
             'radio.password': 'mustanggt',
