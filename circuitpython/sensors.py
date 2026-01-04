@@ -196,6 +196,20 @@ class GPSInterface:
         """
         raise NotImplementedError("Subclass must implement get_track()")
 
+    def get_satellite_details(self):
+        """
+        Get detailed information about visible satellites
+
+        Returns:
+            list: List of dictionaries with satellite details, each containing:
+                - 'prn': Satellite PRN number (int)
+                - 'elevation': Elevation angle in degrees (int, 0-90)
+                - 'azimuth': Azimuth angle in degrees (int, 0-360)
+                - 'snr': Signal-to-noise ratio in dB (int, 0-99), or None if not tracked
+            Returns empty list if no satellite data available
+        """
+        raise NotImplementedError("Subclass must implement get_satellite_details()")
+
 
 class RTCInterface:
     """Base interface for Real-Time Clocks"""
@@ -897,10 +911,41 @@ class ATGM336H(GPSInterface):
         # track_angle_deg gives course over ground in degrees
         return self.gps.track_angle_deg
 
+    def get_satellite_details(self):
+        """
+        Get detailed information about visible satellites from GPGSV sentences
+
+        Returns:
+            list: List of dictionaries with satellite details
+        """
+        satellites = []
+
+        if not hasattr(self.gps, 'sat_prns') or not hasattr(self.gps, 'sats'):
+            return satellites
+
+        if self.gps.sat_prns is None or self.gps.sats is None:
+            return satellites
+
+        for prn in self.gps.sat_prns:
+            try:
+                sat = self.gps.sats[prn]
+                if sat is not None:
+                    satellites.append({
+                        'prn': prn,
+                        'elevation': sat[1] if sat[1] is not None else 0,
+                        'azimuth': sat[2] if sat[2] is not None else 0,
+                        'snr': sat[3] if sat[3] is not None else None
+                    })
+            except (KeyError, IndexError, TypeError):
+                # Skip satellites with missing data
+                continue
+
+        return satellites
+
     def configure_rate(self, rate_ms=1000):
         """
         Configure GPS update rate
-        
+
         Args:
             rate_ms: Update period in milliseconds (200-10000)
         """
@@ -1049,6 +1094,37 @@ class PA1010D(GPSInterface):
 
         # track_angle_deg gives course over ground in degrees
         return self.gps.track_angle_deg
+
+    def get_satellite_details(self):
+        """
+        Get detailed information about visible satellites from GPGSV sentences
+
+        Returns:
+            list: List of dictionaries with satellite details
+        """
+        satellites = []
+
+        if not hasattr(self.gps, 'sat_prns') or not hasattr(self.gps, 'sats'):
+            return satellites
+
+        if self.gps.sat_prns is None or self.gps.sats is None:
+            return satellites
+
+        for prn in self.gps.sat_prns:
+            try:
+                sat = self.gps.sats[prn]
+                if sat is not None:
+                    satellites.append({
+                        'prn': prn,
+                        'elevation': sat[1] if sat[1] is not None else 0,
+                        'azimuth': sat[2] if sat[2] is not None else 0,
+                        'snr': sat[3] if sat[3] is not None else None
+                    })
+            except (KeyError, IndexError, TypeError):
+                # Skip satellites with missing data
+                continue
+
+        return satellites
 
     def configure_rate(self, rate_ms=1000):
         """
@@ -1981,6 +2057,9 @@ class NullGPS(GPSInterface):
 
     def get_track(self):
         return None
+
+    def get_satellite_details(self):
+        return []
 
 
 class NullDisplay(DisplayInterface):

@@ -150,7 +150,11 @@ webserver = hal.get_webserver()
 loop_count = 0
 last_display_update = 0
 last_telemetry_send = 0
+last_satellite_details_send = 0  # Track when we last sent satellite details
 session_start_time = time.monotonic()
+
+# Get satellite details interval from config (default 60 seconds)
+satellite_details_interval = config.get('telemetry.satellite_details_interval', 60)
 
 # Exponential Moving Average state for display smoothing
 # EMA formula: smoothed = alpha * new_value + (1 - alpha) * previous_smoothed
@@ -437,6 +441,15 @@ try:
                 'ry': gyro_data_smoothed['ry'],
                 'rz': gyro_data_smoothed['rz']
             }
+
+            # Include detailed satellite information periodically (for skyplot display)
+            # This is sent less frequently to reduce bandwidth usage
+            if (current_time - last_satellite_details_send) >= satellite_details_interval:
+                sat_details = gps.get_satellite_details()
+                if sat_details:
+                    telemetry['satellite_details'] = sat_details
+                last_satellite_details_send = current_time
+
             webserver.stream_telemetry(telemetry)
             last_telemetry_send = current_time
 
