@@ -788,7 +788,9 @@ class ATGM336H(GPSInterface):
         self.gps = adafruit_gps.GPS(uart, debug=False)
 
         # Configure GPS
-        self.gps.send_command(b'PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA
+        # PMTK314: Set NMEA output sentences (GLL,RMC,VTG,GGA,GSA,GSV,...)
+        # Enable: RMC (position), GGA (fix), GSV (satellite details for skyplot)
+        self.gps.send_command(b'PMTK314,0,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA + GSV
         self.gps.send_command(b'PMTK220,1000')  # 1Hz update rate
 
         self._last_update = 0
@@ -972,7 +974,9 @@ class PA1010D(GPSInterface):
         self.gps = adafruit_gps.GPS_GtopI2C(i2c, debug=False)
 
         # Configure GPS - PA1010D uses same MTK commands as ATGM336H
-        self.gps.send_command(b'PMTK314,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA
+        # PMTK314: Set NMEA output sentences (GLL,RMC,VTG,GGA,GSA,GSV,...)
+        # Enable: RMC (position), GGA (fix), GSV (satellite details for skyplot)
+        self.gps.send_command(b'PMTK314,0,1,0,1,0,1,0,0,0,0,0,0,0,0,0,0,0,0,0')  # RMC + GGA + GSV
         self.gps.send_command(b'PMTK220,1000')  # 1Hz update rate
 
         self._last_update = 0
