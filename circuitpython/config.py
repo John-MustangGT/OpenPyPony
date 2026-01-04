@@ -163,7 +163,6 @@ class Config:
             'gps.type': 'ATGM336H',
             'gps.address': 0x10,
             'gps.update_rate': 1000,
-            'telemetry.satellites_interval': 60,  # Send satellite count every N seconds (default 60s = 1 minute)
             'radio.mode': 'ap',
             'radio.ssid': 'OpenPonyLogger',
             'radio.password': 'mustanggt',
