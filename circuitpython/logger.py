@@ -251,7 +251,12 @@ class BinaryLogger:
         offset += 4
         struct.pack_into('<f', frame_data, offset, gps_data.get('speed', 0.0))
         offset += 4
-        struct.pack_into('<B', frame_data, offset, gps_data.get('satellites', 0))
+        # Satellites - ensure value fits in unsigned byte (0-255)
+        sats = gps_data.get('satellites', 0)
+        if sats is None or not isinstance(sats, (int, float)):
+            sats = 0
+        sats = max(0, min(255, int(sats)))
+        struct.pack_into('<B', frame_data, offset, sats)
         offset += 1
         
         # Reserved

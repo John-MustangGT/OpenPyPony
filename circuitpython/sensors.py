@@ -835,10 +835,17 @@ class ATGM336H(GPSInterface):
         if self.gps.speed_knots is not None:
             return self.gps.speed_knots * 0.514444
         return None
-    
+
     def get_satellites(self):
         """Get number of satellites"""
-        return self.gps.satellites or 0
+        try:
+            sats = self.gps.satellites
+            if sats is None:
+                return 0
+            # Ensure value fits in unsigned byte (0-255)
+            return max(0, min(255, int(sats)))
+        except (AttributeError, ValueError, TypeError):
+            return 0
 
     def get_fix_quality(self):
         """
@@ -984,7 +991,14 @@ class PA1010D(GPSInterface):
 
     def get_satellites(self):
         """Get number of satellites"""
-        return self.gps.satellites or 0
+        try:
+            sats = self.gps.satellites
+            if sats is None:
+                return 0
+            # Ensure value fits in unsigned byte (0-255)
+            return max(0, min(255, int(sats)))
+        except (AttributeError, ValueError, TypeError):
+            return 0
 
     def get_fix_quality(self):
         """
