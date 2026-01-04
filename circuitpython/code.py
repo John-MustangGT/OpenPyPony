@@ -150,7 +150,11 @@ webserver = hal.get_webserver()
 loop_count = 0
 last_display_update = 0
 last_telemetry_send = 0
+last_satellites_send = 0  # Track when we last sent satellite info
 session_start_time = time.monotonic()
+
+# Get satellite telemetry interval from config (default 60 seconds)
+satellites_interval = config.get('telemetry.satellites_interval', 60)
 
 # Exponential Moving Average state for display smoothing
 # EMA formula: smoothed = alpha * new_value + (1 - alpha) * previous_smoothed
@@ -419,6 +423,7 @@ try:
             else:
                 timestamp = 0
 
+            # Base telemetry (sent every update)
             telemetry = {
                 'timestamp': int(timestamp),  # Unix timestamp (UTC)
                 'lat': gps_data['lat'],
@@ -427,9 +432,6 @@ try:
                 'speed': gps_data['speed'] * 2.237,  # Convert m/s to MPH for display
                 'track': gps_data['track'] if gps_data['track'] is not None else 0.0,  # GPS track (COG) - direction of movement
                 'heading': heading,  # Compass heading from magnetometer - direction vehicle is pointing
-                'satellites': gps_data['satellites'],
-                'fix_type': gps_data['fix_type'],
-                'hdop': gps_data['hdop'],
                 'gx': accel_data_smoothed['gx'],
                 'gy': accel_data_smoothed['gy'],
                 'gz': accel_data_smoothed['gz'],
@@ -437,6 +439,15 @@ try:
                 'ry': gyro_data_smoothed['ry'],
                 'rz': gyro_data_smoothed['rz']
             }
+
+            # Include satellite info periodically (reduces bandwidth usage)
+            # Satellite count changes slowly, no need to send every update
+            if (current_time - last_satellites_send) >= satellites_interval:
+                telemetry['satellites'] = gps_data['satellites']
+                telemetry['fix_type'] = gps_data['fix_type']
+                telemetry['hdop'] = gps_data['hdop']
+                last_satellites_send = current_time
+
             webserver.stream_telemetry(telemetry)
             last_telemetry_send = current_time
 
