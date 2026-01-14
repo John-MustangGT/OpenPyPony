@@ -1,11 +1,34 @@
 // src/main.cpp
 // OpenPonyLogger ESP32-S3 Main Application
-// Multi-core FreeRTOS architecture for concurrent sensor/WiFi/logging
+// Pure ESP-IDF implementation with native FreeRTOS
 
-#include <Arduino.h>
-#include <Wire.h>
-#include <SPI.h>
-#include <SD.h>
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <inttypes.h>
+
+// ESP-IDF core
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "freertos/semphr.h"
+#include "freertos/queue.h"
+#include "esp_system.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "nvs_flash.h"
+
+// ESP-IDF drivers
+#include "driver/i2c.h"
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+
+// ESP-IDF WiFi/networking
+#include "esp_wifi.h"
+#include "esp_event.h"
+#include "esp_netif.h"
+#include "lwip/sockets.h"
+
+// Project includes
 #include "config.h"
 #include "logger.h"
 #include "webserver.h"
@@ -14,7 +37,7 @@
 #include "interfaces/magnetometer_interface.h"
 #include "interfaces/display_interface.h"
 
-// TODO: Include concrete implementations
+// TODO: Concrete implementations
 // #include "sensors/pa1010d.h"
 // #include "sensors/icm20948.h"
 // #include "hardware/st7789_display.h"
@@ -22,11 +45,50 @@
 using namespace OpenPony;
 
 // ============================================================================
+// Configuration & Constants
+// ============================================================================
+
+static const char *TAG = "OpenPony";
+
+// I2C Configuration (STEMMA QT on Feather)
+#define I2C_MASTER_SCL_IO           GPIO_NUM_4      // Feather I2C SCL
+#define I2C_MASTER_SDA_IO           GPIO_NUM_3      // Feather I2C SDA
+#define I2C_MASTER_NUM              I2C_NUM_0
+#define I2C_MASTER_FREQ_HZ          400000          // 400 kHz Fast Mode
+#define I2C_MASTER_TIMEOUT_MS       1000
+
+// SPI Configuration (SD card on FeatherWing Adalogger)
+#define SPI_HOST_ID                 SPI2_HOST
+#define PIN_NUM_MISO                GPIO_NUM_37     // FeatherWing SPI
+#define PIN_NUM_MOSI                GPIO_NUM_35
+#define PIN_NUM_CLK                 GPIO_NUM_36
+#define PIN_NUM_CS                  GPIO_NUM_33     // SD card CS
+
+// TFT Display SPI (on Feather board itself)
+#define TFT_SPI_HOST               SPI3_HOST
+#define TFT_PIN_MOSI               GPIO_NUM_35
+#define TFT_PIN_CLK                GPIO_NUM_36
+#define TFT_PIN_CS                 GPIO_NUM_7
+#define TFT_PIN_DC                 GPIO_NUM_39
+#define TFT_PIN_RST                GPIO_NUM_40
+#define TFT_PIN_BL                 GPIO_NUM_45     // Backlight
+
+// Task priorities (0 = lowest, configMAX_PRIORITIES-1 = highest)
+#define PRIORITY_SENSOR_TASK        3              // High priority
+#define PRIORITY_LOGGING_TASK       2              // Medium priority
+#define PRIORITY_WIFI_TASK          1              // Low priority
+
+// Task stack sizes
+#define STACK_SIZE_SENSOR           4096
+#define STACK_SIZE_LOGGING          4096
+#define STACK_SIZE_WIFI             8192           // WiFi needs more stack
+
+// ============================================================================
 // Global Objects
 // ============================================================================
 
 Config config;
-BinaryLogger logger;
+BinaryLogger* logger = nullptr;
 WebSocketTelemetryServer* telemetry_server = nullptr;
 
 // Sensor interfaces (will be initialized in setup)
@@ -35,13 +97,9 @@ IMUInterface* imu = nullptr;
 MagnetometerInterface* mag = nullptr;
 DisplayInterface* display = nullptr;
 
-// FreeRTOS task handles
-TaskHandle_t sensorTaskHandle = NULL;
-TaskHandle_t loggingTaskHandle = NULL;
-TaskHandle_t wifiTaskHandle = NULL;
-
-// Synchronization
-SemaphoreHandle_t sensorDataMutex = NULL;
+// FreeRTOS synchronization
+SemaphoreHandle_t sensor_data_mutex = nullptr;
+QueueHandle_t log_queue = nullptr;
 
 // Shared sensor data (protected by mutex)
 struct SensorData {
@@ -59,7 +117,7 @@ struct SensorData {
     float heading;
 
     std::vector<SatelliteInfo> satellite_details;
-    uint32_t timestamp_ms;
+    int64_t timestamp_us;
     bool data_ready;
 } shared_sensor_data;
 
@@ -69,13 +127,69 @@ volatile uint32_t frames_logged = 0;
 volatile uint32_t telemetry_sent = 0;
 
 // ============================================================================
+// I2C Bus Initialization
+// ============================================================================
+
+static esp_err_t i2c_master_init(void)
+{
+    i2c_config_t conf = {};
+    conf.mode = I2C_MODE_MASTER;
+    conf.sda_io_num = I2C_MASTER_SDA_IO;
+    conf.scl_io_num = I2C_MASTER_SCL_IO;
+    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
+    conf.clk_flags = 0;
+
+    esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "I2C bus initialized at %d Hz", I2C_MASTER_FREQ_HZ);
+    return ESP_OK;
+}
+
+// ============================================================================
+// SPI Bus Initialization
+// ============================================================================
+
+static esp_err_t spi_bus_init(void)
+{
+    // Initialize SPI bus for SD card
+    spi_bus_config_t buscfg = {};
+    buscfg.miso_io_num = PIN_NUM_MISO;
+    buscfg.mosi_io_num = PIN_NUM_MOSI;
+    buscfg.sclk_io_num = PIN_NUM_CLK;
+    buscfg.quadwp_io_num = -1;
+    buscfg.quadhd_io_num = -1;
+    buscfg.max_transfer_sz = 4096;
+
+    esp_err_t err = spi_bus_initialize(SPI_HOST_ID, &buscfg, SPI_DMA_CH_AUTO);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "SPI bus init failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    ESP_LOGI(TAG, "SPI bus initialized");
+    return ESP_OK;
+}
+
+// ============================================================================
 // FreeRTOS Tasks
 // ============================================================================
 
 // Task 1: Sensor Reading (Core 1, high priority)
-// Reads GPS, IMU, magnetometer at high rate
-void sensorTask(void* parameter) {
-    Serial.println("[Task] Sensor task started on core " + String(xPortGetCoreID()));
+static void sensor_task(void* parameter)
+{
+    ESP_LOGI(TAG, "Sensor task started on core %d", xPortGetCoreID());
 
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t sensor_period = pdMS_TO_TICKS(100);  // 10 Hz
@@ -87,8 +201,8 @@ void sensorTask(void* parameter) {
         }
 
         // Read sensor data
-        SensorData local_data;
-        local_data.timestamp_ms = millis();
+        SensorData local_data = {};
+        local_data.timestamp_us = esp_timer_get_time();
 
         if (gps && gps->hasFix()) {
             local_data.gps_position = gps->getPosition();
@@ -115,9 +229,9 @@ void sensorTask(void* parameter) {
         local_data.data_ready = true;
 
         // Copy to shared data (protected by mutex)
-        if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTake(sensor_data_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             shared_sensor_data = local_data;
-            xSemaphoreGive(sensorDataMutex);
+            xSemaphoreGive(sensor_data_mutex);
         }
 
         sensor_loop_count++;
@@ -128,43 +242,48 @@ void sensorTask(void* parameter) {
 }
 
 // Task 2: Data Logging (Core 1, medium priority)
-// Writes sensor data to SD card at high rate
-void loggingTask(void* parameter) {
-    Serial.println("[Task] Logging task started on core " + String(xPortGetCoreID()));
+static void logging_task(void* parameter)
+{
+    ESP_LOGI(TAG, "Logging task started on core %d", xPortGetCoreID());
 
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t log_period = pdMS_TO_TICKS(100);  // 10 Hz
+    uint32_t flush_counter = 0;
 
     while (true) {
         // Read shared sensor data
-        SensorData local_data;
+        SensorData local_data = {};
         bool has_data = false;
 
-        if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        if (xSemaphoreTake(sensor_data_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             if (shared_sensor_data.data_ready) {
                 local_data = shared_sensor_data;
                 has_data = true;
             }
-            xSemaphoreGive(sensorDataMutex);
+            xSemaphoreGive(sensor_data_mutex);
         }
 
         // Log to SD card
-        if (has_data && logger.isLogging() && local_data.gps_fix) {
-            double timestamp = local_data.timestamp_ms / 1000.0;
+        if (has_data && logger && logger->isLogging() && local_data.gps_fix) {
+            double timestamp = local_data.timestamp_us / 1000000.0;
 
-            if (logger.logFrame(timestamp,
-                              local_data.gps_position,
-                              local_data.gps_speed,
-                              local_data.gps_satellites,
-                              local_data.accel,
-                              local_data.gyro)) {
+            if (logger->logFrame(timestamp,
+                                local_data.gps_position,
+                                local_data.gps_speed,
+                                local_data.gps_satellites,
+                                local_data.accel,
+                                local_data.gyro)) {
                 frames_logged++;
+                flush_counter++;
             }
         }
 
-        // Periodic flush to SD card (every 5 seconds)
-        if (frames_logged % 50 == 0 && frames_logged > 0) {
-            logger.flush();
+        // Periodic flush to SD card (every 50 frames = 5 seconds at 10 Hz)
+        if (flush_counter >= 50) {
+            if (logger) {
+                logger->flush();
+            }
+            flush_counter = 0;
         }
 
         vTaskDelayUntil(&last_wake_time, log_period);
@@ -172,14 +291,14 @@ void loggingTask(void* parameter) {
 }
 
 // Task 3: WiFi/WebSocket Telemetry (Core 0, low priority)
-// Streams telemetry to connected clients
-void wifiTask(void* parameter) {
-    Serial.println("[Task] WiFi task started on core " + String(xPortGetCoreID()));
+static void wifi_task(void* parameter)
+{
+    ESP_LOGI(TAG, "WiFi task started on core %d", xPortGetCoreID());
 
     TickType_t last_wake_time = xTaskGetTickCount();
     const TickType_t telemetry_period = pdMS_TO_TICKS(100);  // 10 Hz
-    uint32_t last_satellite_details_time = 0;
-    const uint32_t satellite_details_interval = config.getInt("telemetry.satellite_details_interval", 60) * 1000;
+    int64_t last_satellite_details_time = 0;
+    const int64_t satellite_details_interval = config.getInt("telemetry.satellite_details_interval", 60) * 1000000LL;
 
     while (true) {
         // Update WebSocket server
@@ -189,20 +308,20 @@ void wifiTask(void* parameter) {
 
         // Send telemetry if clients connected
         if (telemetry_server && telemetry_server->getClientCount() > 0) {
-            SensorData local_data;
+            SensorData local_data = {};
             bool has_data = false;
 
-            if (xSemaphoreTake(sensorDataMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            if (xSemaphoreTake(sensor_data_mutex, pdMS_TO_TICKS(10)) == pdTRUE) {
                 if (shared_sensor_data.data_ready) {
                     local_data = shared_sensor_data;
                     has_data = true;
                 }
-                xSemaphoreGive(sensorDataMutex);
+                xSemaphoreGive(sensor_data_mutex);
             }
 
             if (has_data) {
                 TelemetryData telemetry;
-                telemetry.timestamp = local_data.timestamp_ms / 1000;
+                telemetry.timestamp = local_data.timestamp_us / 1000000;
                 telemetry.lat = local_data.gps_position.latitude;
                 telemetry.lon = local_data.gps_position.longitude;
                 telemetry.alt = local_data.gps_position.altitude;
@@ -226,7 +345,7 @@ void wifiTask(void* parameter) {
                 }
 
                 // Include satellite details periodically
-                uint32_t now = millis();
+                int64_t now = esp_timer_get_time();
                 if (now - last_satellite_details_time >= satellite_details_interval) {
                     if (gps) {
                         auto sat_details = gps->getSatelliteDetails();
@@ -246,150 +365,141 @@ void wifiTask(void* parameter) {
     }
 }
 
+// Statistics task (prints stats every 5 seconds)
+static void stats_task(void* parameter)
+{
+    while (true) {
+        ESP_LOGI(TAG, "=== Statistics ===");
+        ESP_LOGI(TAG, "Sensor loops: %" PRIu32, sensor_loop_count);
+        ESP_LOGI(TAG, "Frames logged: %" PRIu32, frames_logged);
+        ESP_LOGI(TAG, "Telemetry sent: %" PRIu32, telemetry_sent);
+        if (telemetry_server) {
+            ESP_LOGI(TAG, "WiFi clients: %u", telemetry_server->getClientCount());
+        }
+        ESP_LOGI(TAG, "Free heap: %" PRIu32 " bytes", esp_get_free_heap_size());
+        ESP_LOGI(TAG, "Min free heap: %" PRIu32 " bytes", esp_get_minimum_free_heap_size());
+
+        vTaskDelay(pdMS_TO_TICKS(5000));
+    }
+}
+
 // ============================================================================
-// Setup & Loop
+// Main Application Entry Point
 // ============================================================================
 
-void setup() {
-    Serial.begin(115200);
-    delay(2000);  // Wait for serial monitor
+extern "C" void app_main(void)
+{
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "OpenPonyLogger ESP32-S3");
+    ESP_LOGI(TAG, "Version: %s", OPENPONY_VERSION);
+    ESP_LOGI(TAG, "ESP-IDF: %s", esp_get_idf_version());
+    ESP_LOGI(TAG, "========================================");
 
-    Serial.println("\n\n========================================");
-    Serial.println("OpenPonyLogger ESP32-S3");
-    Serial.println("Version: 2.0.0-esp32s3");
-    Serial.println("========================================\n");
+    // Initialize NVS (required for WiFi)
+    esp_err_t ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(ret);
+
+    // Initialize TCP/IP stack (required for WiFi)
+    ESP_ERROR_CHECK(esp_netif_init());
+    ESP_ERROR_CHECK(esp_event_loop_create_default());
 
     // Create mutex for sensor data protection
-    sensorDataMutex = xSemaphoreCreateMutex();
-    if (!sensorDataMutex) {
-        Serial.println("[ERROR] Failed to create mutex!");
-        while(1) delay(1000);
+    sensor_data_mutex = xSemaphoreCreateMutex();
+    if (sensor_data_mutex == nullptr) {
+        ESP_LOGE(TAG, "Failed to create mutex!");
+        return;
     }
 
-    // Initialize I2C bus (STEMMA QT)
-    Wire.begin();
-    Wire.setClock(400000);  // 400 kHz Fast Mode
-    Serial.println("[I2C] Bus initialized at 400 kHz");
+    // Initialize I2C bus (STEMMA QT sensors)
+    ESP_ERROR_CHECK(i2c_master_init());
 
     // Initialize SPI bus (SD card)
-    // TODO: Configure SPI pins for FeatherWing
-    SPI.begin();
-    Serial.println("[SPI] Bus initialized");
+    ESP_ERROR_CHECK(spi_bus_init());
 
     // Load configuration
-    Serial.println("\n[Config] Loading configuration...");
+    ESP_LOGI(TAG, "Loading configuration...");
     config.load();
-    Serial.println("[Config] Configuration loaded");
 
-    // Initialize SD card
-    Serial.println("\n[SD] Initializing SD card...");
-    // TODO: Set correct CS pin for FeatherWing Adalogger
-    if (SD.begin(33)) {  // Replace with correct pin
-        Serial.println("[SD] Card initialized successfully");
-    } else {
-        Serial.println("[SD] Card initialization failed!");
-    }
+    // Initialize SD card and logger
+    ESP_LOGI(TAG, "Initializing SD card logger...");
+    // TODO: Initialize SD card with FATFS
+    // logger = new BinaryLogger();
+    // logger->begin();
 
     // Initialize sensors
-    Serial.println("\n[Sensors] Initializing...");
-
+    ESP_LOGI(TAG, "Initializing sensors...");
     // TODO: Initialize PA1010D GPS
-    // gps = new PA1010D(&Wire);
-    Serial.println("[GPS] PA1010D (stub - not implemented yet)");
+    // gps = new PA1010D(I2C_MASTER_NUM);
+    ESP_LOGI(TAG, "GPS: PA1010D (stub - not implemented yet)");
 
     // TODO: Initialize ICM20948 IMU
-    // imu = new ICM20948(&Wire);
+    // imu = new ICM20948(I2C_MASTER_NUM);
     // mag = imu;  // ICM20948 has integrated magnetometer
-    Serial.println("[IMU] ICM20948 (stub - not implemented yet)");
+    ESP_LOGI(TAG, "IMU: ICM20948 (stub - not implemented yet)");
 
     // TODO: Initialize ST7789 TFT display
     // display = new ST7789Display();
-    Serial.println("[Display] ST7789 TFT (stub - not implemented yet)");
-
-    // Start binary logger
-    Serial.println("\n[Logger] Starting binary logger...");
-    if (logger.begin()) {
-        Serial.println("[Logger] Logger started successfully");
-    } else {
-        Serial.println("[Logger] Failed to start logger!");
-    }
+    ESP_LOGI(TAG, "Display: ST7789 TFT (stub - not implemented yet)");
 
     // Initialize WiFi and WebSocket server
-    Serial.println("\n[WiFi] Starting WiFi...");
-    String wifi_mode = config.getString("radio.mode", "ap");
-    String wifi_ssid = config.getString("radio.ssid", "OpenPonyLogger");
-    String wifi_password = config.getString("radio.password", "mustanggt");
-
-    telemetry_server = new WebSocketTelemetryServer(80);
-    if (telemetry_server->begin(wifi_ssid.c_str(), wifi_password.c_str(), wifi_mode == "ap")) {
-        Serial.print("[WiFi] Server started at ");
-        Serial.println(telemetry_server->getIP());
-        Serial.println("[WiFi] WebSocket telemetry available on port 80");
-    } else {
-        Serial.println("[WiFi] Failed to start server!");
-    }
+    ESP_LOGI(TAG, "Starting WiFi...");
+    // TODO: Initialize WebSocket server
+    // telemetry_server = new WebSocketTelemetryServer(80);
+    // telemetry_server->begin(...);
 
     // Create FreeRTOS tasks
-    Serial.println("\n[Tasks] Creating FreeRTOS tasks...");
+    ESP_LOGI(TAG, "Creating FreeRTOS tasks...");
 
     // Sensor task on Core 1 (high priority)
     xTaskCreatePinnedToCore(
-        sensorTask,           // Function
-        "SensorTask",         // Name
-        4096,                 // Stack size
-        NULL,                 // Parameters
-        2,                    // Priority (high)
-        &sensorTaskHandle,    // Handle
-        1                     // Core 1
+        sensor_task,
+        "sensor",
+        STACK_SIZE_SENSOR,
+        nullptr,
+        PRIORITY_SENSOR_TASK,
+        nullptr,
+        1  // Core 1
     );
 
     // Logging task on Core 1 (medium priority)
     xTaskCreatePinnedToCore(
-        loggingTask,
-        "LoggingTask",
-        4096,
-        NULL,
-        1,                    // Priority (medium)
-        &loggingTaskHandle,
-        1                     // Core 1
+        logging_task,
+        "logging",
+        STACK_SIZE_LOGGING,
+        nullptr,
+        PRIORITY_LOGGING_TASK,
+        nullptr,
+        1  // Core 1
     );
 
-    // WiFi task on Core 0 (low priority, isolated from sensors)
+    // WiFi task on Core 0 (low priority, isolated)
     xTaskCreatePinnedToCore(
-        wifiTask,
-        "WiFiTask",
-        8192,                 // Larger stack for WiFi
-        NULL,
-        0,                    // Priority (low)
-        &wifiTaskHandle,
-        0                     // Core 0 (WiFi core)
+        wifi_task,
+        "wifi",
+        STACK_SIZE_WIFI,
+        nullptr,
+        PRIORITY_WIFI_TASK,
+        nullptr,
+        0  // Core 0 (WiFi core)
     );
 
-    Serial.println("[Tasks] All tasks created successfully");
-    Serial.println("\n========================================");
-    Serial.println("System Ready!");
-    Serial.println("========================================\n");
-}
+    // Statistics task (can run on either core)
+    xTaskCreate(
+        stats_task,
+        "stats",
+        2048,
+        nullptr,
+        0,  // Lowest priority
+        nullptr
+    );
 
-void loop() {
-    // Main loop runs on Core 1
-    // Just print statistics every 5 seconds
-    static uint32_t last_stats_time = 0;
-    uint32_t now = millis();
+    ESP_LOGI(TAG, "========================================");
+    ESP_LOGI(TAG, "System Ready!");
+    ESP_LOGI(TAG, "========================================");
 
-    if (now - last_stats_time >= 5000) {
-        Serial.println("\n--- Statistics ---");
-        Serial.printf("Sensor loops: %u\n", sensor_loop_count);
-        Serial.printf("Frames logged: %u\n", frames_logged);
-        Serial.printf("Telemetry sent: %u\n", telemetry_sent);
-        if (telemetry_server) {
-            Serial.printf("WiFi clients: %u\n", telemetry_server->getClientCount());
-        }
-        Serial.printf("Free heap: %u bytes\n", ESP.getFreeHeap());
-        Serial.println("------------------\n");
-
-        last_stats_time = now;
-    }
-
-    delay(100);
+    // app_main returns, but FreeRTOS tasks continue running
 }

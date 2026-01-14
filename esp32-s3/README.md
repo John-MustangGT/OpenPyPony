@@ -4,21 +4,22 @@ C++ implementation of OpenPonyLogger for ESP32-S3 with native WiFi/BLE support.
 
 ## Hardware
 
-- **MCU**: Adafruit ESP32-S3 Feather Reverse TFT
-  - 240 MHz dual-core Tensilica processor
-  - 512 KB RAM, 8 MB Flash, 2 MB PSRAM
-  - Built-in 1.14" 135x240 color TFT (ST7789)
-  - Native WiFi and Bluetooth LE
+- **MCU**: Adafruit ESP32-S3 TFT Feather (display on TOP - allows FeatherWing stacking)
+  - 240 MHz dual-core Xtensa LX7 processor
+  - 512 KB SRAM, 8 MB Flash, 8 MB PSRAM
+  - Built-in 1.14" 135x240 color TFT (ST7789) on TOP side
+  - Native WiFi 802.11 b/g/n and Bluetooth LE 5.0
   - STEMMA QT connector for I2C sensors
 
-- **Data Logger**: FeatherWing Adalogger (stacks on Feather)
+- **Data Logger**: FeatherWing Adalogger (stacks underneath Feather)
   - MicroSD card slot on SPI bus
   - High-speed logging capability
+  - Stacks cleanly since display is on top
 
 - **Sensors** (all on STEMMA QT I2C chain):
   - PA1010D GPS (I2C address 0x10)
   - ICM20948 9-DOF IMU (accelerometer + gyroscope + magnetometer)
-  - Future expansion possible
+  - Future expansion possible on I2C bus
 
 ## Architecture
 
@@ -88,20 +89,33 @@ esp32-s3/
 
 ## Building
 
+This project uses **ESP-IDF framework** (not Arduino) via PlatformIO for maximum performance and native FreeRTOS control.
+
 ```bash
 # Install PlatformIO
 pip install platformio
 
-# Build project
+# Build project (ESP-IDF will auto-download on first build)
 cd esp32-s3
 pio run
 
 # Upload to board
 pio run --target upload
 
-# Monitor serial output
+# Monitor serial output (115200 baud)
 pio device monitor
+
+# Or combined upload + monitor
+pio run --target upload --target monitor
+
+# Clean build
+pio run --target clean
+
+# Flash erase (if needed)
+pio run --target erase
 ```
+
+**Note**: First build will take several minutes as PlatformIO downloads and configures the ESP-IDF toolchain. Subsequent builds are much faster.
 
 ## Configuration
 
@@ -176,6 +190,19 @@ JSON format (10 Hz, compatible with gps-monitor):
 ```
 
 Satellite details are sent every 60 seconds (configurable).
+
+## Why ESP-IDF (not Arduino)?
+
+This project uses **native ESP-IDF** for several key reasons:
+
+1. **Performance**: No Arduino abstraction overhead
+2. **FreeRTOS**: Direct access to all RTOS features (queues, semaphores, task affinity)
+3. **Control**: Fine-grained hardware control (I2C, SPI, WiFi, BLE)
+4. **Optimization**: Compiler optimizations for ESP32-S3 specific features
+5. **Professional**: Industry-standard framework for ESP32 development
+6. **BLE**: Native NimBLE stack (excellent for OBD2)
+
+Arduino is great for prototyping, but ESP-IDF is the right choice for a high-performance data logger.
 
 ## Migration from CircuitPython
 
