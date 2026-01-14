@@ -36,10 +36,15 @@
 #include "interfaces/imu_interface.h"
 #include "interfaces/magnetometer_interface.h"
 #include "interfaces/display_interface.h"
+#include "interfaces/battery_interface.h"
+#include "interfaces/vehicle_interface.h"
 
-// TODO: Concrete implementations
-// #include "sensors/pa1010d.h"
-// #include "sensors/icm20948.h"
+// Concrete sensor implementations
+#include "sensors/pa1010d.h"
+#include "sensors/icm20948.h"
+#include "hardware/feather_battery.h"
+
+// TODO: Display implementation
 // #include "hardware/st7789_display.h"
 
 using namespace OpenPony;
@@ -91,6 +96,8 @@ GPSInterface* gps = nullptr;
 IMUInterface* imu = nullptr;
 MagnetometerInterface* mag = nullptr;
 DisplayInterface* display = nullptr;
+BatteryInterface* battery = nullptr;
+VehicleInterface* vehicle = nullptr;
 
 // FreeRTOS synchronization
 SemaphoreHandle_t sensor_data_mutex = nullptr;
@@ -435,18 +442,41 @@ extern "C" void app_main(void)
 
     // Initialize sensors
     ESP_LOGI(TAG, "Initializing sensors...");
-    // TODO: Initialize PA1010D GPS
-    // gps = new PA1010D(I2C_MASTER_NUM);
-    ESP_LOGI(TAG, "GPS: PA1010D (stub - not implemented yet)");
 
-    // TODO: Initialize ICM20948 IMU
-    // imu = new ICM20948(I2C_MASTER_NUM);
-    // mag = imu;  // ICM20948 has integrated magnetometer
-    ESP_LOGI(TAG, "IMU: ICM20948 (stub - not implemented yet)");
+    // Initialize PA1010D GPS
+    gps = new PA1010D(I2C_MASTER_NUM, 0x10);
+    if (gps) {
+        ((PA1010D*)gps)->setUpdateRate(100);  // 10 Hz
+        ESP_LOGI(TAG, "GPS: PA1010D initialized");
+    } else {
+        ESP_LOGE(TAG, "Failed to create PA1010D GPS");
+    }
+
+    // Initialize ICM20948 IMU
+    ICM20948* icm = new ICM20948(I2C_MASTER_NUM);
+    if (icm && icm->begin()) {
+        imu = icm;
+        mag = icm;  // ICM20948 has integrated magnetometer
+        icm->setRange((uint8_t)16);  // 16g accelerometer range for track use
+        icm->setRange((uint16_t)2000);  // 2000 dps gyroscope range
+        ESP_LOGI(TAG, "IMU: ICM20948 initialized (16g accel, 2000dps gyro)");
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize ICM20948 IMU");
+        delete icm;
+    }
+
+    // Initialize Battery Monitor
+    battery = new FeatherBattery();
+    if (battery && ((FeatherBattery*)battery)->begin()) {
+        BatteryInfo info = battery->read();
+        ESP_LOGI(TAG, "Battery: %.2fV (%.0f%%)", info.voltage, info.percent);
+    } else {
+        ESP_LOGE(TAG, "Failed to initialize battery monitor");
+    }
 
     // TODO: Initialize ST7789 TFT display
     // display = new ST7789Display();
-    ESP_LOGI(TAG, "Display: ST7789 TFT (stub - not implemented yet)");
+    ESP_LOGI(TAG, "Display: ST7789 TFT (not implemented yet)");
 
     // Initialize WiFi and WebSocket server
     ESP_LOGI(TAG, "Starting WiFi...");

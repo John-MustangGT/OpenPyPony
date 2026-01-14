@@ -4,7 +4,6 @@
 
 #pragma once
 
-#include <Arduino.h>
 #include <map>
 #include <string>
 
@@ -23,13 +22,13 @@ public:
     bool save(const char* filepath = "/sd/settings.toml");
 
     // Get configuration values with defaults
-    String getString(const char* key, const char* defaultValue = "") const;
+    std::string getString(const char* key, const char* defaultValue = "") const;
     int getInt(const char* key, int defaultValue = 0) const;
     float getFloat(const char* key, float defaultValue = 0.0f) const;
     bool getBool(const char* key, bool defaultValue = false) const;
 
     // Set configuration values
-    void set(const char* key, const String& value);
+    void set(const char* key, const std::string& value);
     void set(const char* key, int value);
     void set(const char* key, float value);
     void set(const char* key, bool value);
@@ -38,7 +37,7 @@ public:
     bool has(const char* key) const;
 
 private:
-    std::map<String, String> config_;
+    std::map<std::string, std::string> config_;
     void setDefaults();
 };
 

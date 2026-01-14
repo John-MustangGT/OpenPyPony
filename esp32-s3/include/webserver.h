@@ -4,11 +4,9 @@
 
 #pragma once
 
-#include <Arduino.h>
-#include <WiFi.h>
-#include <WebServer.h>
-#include <WebSocketsServer.h>
-#include <ArduinoJson.h>
+#include <string>
+#include <vector>
+#include "esp_wifi.h"
 #include "interfaces/gps_interface.h"
 #include "interfaces/imu_interface.h"
 
@@ -63,25 +61,15 @@ public:
     // Get connection status
     uint8_t getClientCount() const { return client_count_; }
     bool isRunning() const { return running_; }
-    IPAddress getIP() const { return WiFi.localIP(); }
+    std::string getIP() const;
 
 private:
-    WebServer http_server_;
-    WebSocketsServer ws_server_;
     uint16_t port_;
     bool running_;
     uint8_t client_count_;
 
-    // WebSocket event handler
-    void onWebSocketEvent(uint8_t client_num, WStype_t type,
-                         uint8_t* payload, size_t length);
-
-    // HTTP handlers
-    void handleRoot();
-    void handleNotFound();
-
     // Serialize telemetry to JSON
-    String serializeTelemetry(const TelemetryData& data);
+    std::string serializeTelemetry(const TelemetryData& data);
 };
 
 } // namespace OpenPony
