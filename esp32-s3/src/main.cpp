@@ -57,14 +57,7 @@ static const char *TAG = "OpenPony";
 #define I2C_MASTER_FREQ_HZ          400000          // 400 kHz Fast Mode
 #define I2C_MASTER_TIMEOUT_MS       1000
 
-// SPI Configuration (SD card on FeatherWing Adalogger)
-#define SPI_HOST_ID                 SPI2_HOST
-#define PIN_NUM_MISO                GPIO_NUM_37     // FeatherWing SPI
-#define PIN_NUM_MOSI                GPIO_NUM_35
-#define PIN_NUM_CLK                 GPIO_NUM_36
-#define PIN_NUM_CS                  GPIO_NUM_33     // SD card CS
-
-// TFT Display SPI (on Feather board itself)
+// TFT Display SPI (on Feather Reverse - display on BOTTOM, always visible!)
 #define TFT_SPI_HOST               SPI3_HOST
 #define TFT_PIN_MOSI               GPIO_NUM_35
 #define TFT_PIN_CLK                GPIO_NUM_36
@@ -72,6 +65,8 @@ static const char *TAG = "OpenPony";
 #define TFT_PIN_DC                 GPIO_NUM_39
 #define TFT_PIN_RST                GPIO_NUM_40
 #define TFT_PIN_BL                 GPIO_NUM_45     // Backlight
+
+// No SD card - using flash storage (4-5 MB available)
 
 // Task priorities (0 = lowest, configMAX_PRIORITIES-1 = highest)
 #define PRIORITY_SENSOR_TASK        3              // High priority
@@ -88,7 +83,7 @@ static const char *TAG = "OpenPony";
 // ============================================================================
 
 Config config;
-BinaryLogger* logger = nullptr;
+FlashLogger* logger = nullptr;
 WebSocketTelemetryServer* telemetry_server = nullptr;
 
 // Sensor interfaces (will be initialized in setup)
@@ -158,28 +153,30 @@ static esp_err_t i2c_master_init(void)
 }
 
 // ============================================================================
-// SPI Bus Initialization
+// Storage Management
 // ============================================================================
 
-static esp_err_t spi_bus_init(void)
+// Check flash storage and cleanup if needed (90% → 60% policy)
+static void check_flash_storage(void* parameter)
 {
-    // Initialize SPI bus for SD card
-    spi_bus_config_t buscfg = {};
-    buscfg.miso_io_num = PIN_NUM_MISO;
-    buscfg.mosi_io_num = PIN_NUM_MOSI;
-    buscfg.sclk_io_num = PIN_NUM_CLK;
-    buscfg.quadwp_io_num = -1;
-    buscfg.quadhd_io_num = -1;
-    buscfg.max_transfer_sz = 4096;
+    while (true) {
+        // Check every 30 seconds
+        vTaskDelay(pdMS_TO_TICKS(30000));
 
-    esp_err_t err = spi_bus_initialize(SPI_HOST_ID, &buscfg, SPI_DMA_CH_AUTO);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "SPI bus init failed: %s", esp_err_to_name(err));
-        return err;
+        if (logger) {
+            float usage = logger->getUsagePercent();
+            ESP_LOGI(TAG, "Flash usage: %.1f%%", usage * 100);
+
+            if (usage >= HIGH_WATER_MARK) {
+                ESP_LOGW(TAG, "Flash at %.1f%% - cleaning up old sessions...", usage * 100);
+                if (logger->cleanupOldSessions()) {
+                    ESP_LOGI(TAG, "Cleanup complete - now at %.1f%%", logger->getUsagePercent() * 100);
+                } else {
+                    ESP_LOGE(TAG, "Cleanup failed!");
+                }
+            }
+        }
     }
-
-    ESP_LOGI(TAG, "SPI bus initialized");
-    return ESP_OK;
 }
 
 // ============================================================================
@@ -417,18 +414,24 @@ extern "C" void app_main(void)
     // Initialize I2C bus (STEMMA QT sensors)
     ESP_ERROR_CHECK(i2c_master_init());
 
-    // Initialize SPI bus (SD card)
-    ESP_ERROR_CHECK(spi_bus_init());
-
     // Load configuration
     ESP_LOGI(TAG, "Loading configuration...");
     config.load();
 
-    // Initialize SD card and logger
-    ESP_LOGI(TAG, "Initializing SD card logger...");
-    // TODO: Initialize SD card with FATFS
-    // logger = new BinaryLogger();
-    // logger->begin();
+    // Initialize flash logger
+    ESP_LOGI(TAG, "Initializing flash storage logger...");
+    logger = new FlashLogger();
+    if (logger->begin()) {
+        ESP_LOGI(TAG, "Flash logger initialized - %.1f%% used",
+                 logger->getUsagePercent() * 100);
+
+        // Start new logging session
+        if (logger->startSession()) {
+            ESP_LOGI(TAG, "Session started: %s", logger->getCurrentSession());
+        }
+    } else {
+        ESP_LOGE(TAG, "Flash logger init failed!");
+    }
 
     // Initialize sensors
     ESP_LOGI(TAG, "Initializing sensors...");
@@ -491,6 +494,16 @@ extern "C" void app_main(void)
     xTaskCreate(
         stats_task,
         "stats",
+        2048,
+        nullptr,
+        0,  // Lowest priority
+        nullptr
+    );
+
+    // Storage management task (monitors flash, cleans up at 90%)
+    xTaskCreate(
+        check_flash_storage,
+        "storage",
         2048,
         nullptr,
         0,  // Lowest priority

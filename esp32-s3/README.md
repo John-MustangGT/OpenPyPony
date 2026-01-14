@@ -4,17 +4,20 @@ C++ implementation of OpenPonyLogger for ESP32-S3 with native WiFi/BLE support.
 
 ## Hardware
 
-- **MCU**: Adafruit ESP32-S3 TFT Feather (display on TOP - allows FeatherWing stacking)
+- **MCU**: Adafruit ESP32-S3 Feather Reverse TFT
   - 240 MHz dual-core Xtensa LX7 processor
-  - 512 KB SRAM, 8 MB Flash, 8 MB PSRAM
-  - Built-in 1.14" 135x240 color TFT (ST7789) on TOP side
+  - 512 KB SRAM, 8 MB Flash (4-5 MB for data), 8 MB PSRAM
+  - Built-in 1.14" 135x240 color TFT (ST7789) on **BOTTOM** side
+  - Display always visible during use (no stacking needed)
   - Native WiFi 802.11 b/g/n and Bluetooth LE 5.0
   - STEMMA QT connector for I2C sensors
 
-- **Data Logger**: FeatherWing Adalogger (stacks underneath Feather)
-  - MicroSD card slot on SPI bus
-  - High-speed logging capability
-  - Stacks cleanly since display is on top
+- **Storage**: Flash only (no SD card)
+  - 4-5 MB available for logging (~2 hours @ 10 Hz)
+  - Ring buffer policy: 90% → delete oldest until 60%
+  - Download logs over WiFi HTTP/WebSocket
+  - Faster writes than SD card
+  - More reliable (no mechanical failures)
 
 - **Sensors** (all on STEMMA QT I2C chain):
   - PA1010D GPS (I2C address 0x10)
@@ -32,8 +35,12 @@ C++ implementation of OpenPonyLogger for ESP32-S3 with native WiFi/BLE support.
 
 **Core 1** (Application core):
 - High-priority sensor reading (10-100 Hz)
-- Binary data logging to SD card
+- Binary data logging to flash storage
 - Display updates
+
+**Additional Tasks** (scheduler balanced):
+- Storage management (monitors flash usage, cleans up at 90%)
+- Statistics reporting
 
 ### Key Features
 
@@ -145,6 +152,33 @@ telemetry.rate = 10
 telemetry.satellite_details_interval = 60
 ```
 
+## Flash Storage & Ring Buffer Policy
+
+**Storage Capacity:**
+- Total: 8 MB flash
+- Firmware: ~1.5-2 MB
+- Available: 4-5 MB for data logging
+- Duration: ~2 hours @ 10 Hz (64 bytes/frame)
+
+**Automatic Cleanup (Ring Buffer):**
+```
+When flash reaches 90% full:
+  1. Find oldest sessions
+  2. Delete them one by one
+  3. Stop when usage drops to 60%
+```
+
+This gives you:
+- **Continuous logging** without intervention
+- **Automatic space management**
+- **~2 hours** of buffered data before oldest is deleted
+- **Download sessions** over WiFi before they're cleaned up
+
+**Perfect for track days:**
+- 20-30 minute sessions
+- Download between sessions
+- Never run out of space
+
 ## Binary Log Format
 
 The ESP32-S3 version uses the **exact same binary format** as the CircuitPython version for full compatibility with existing tools.
@@ -159,6 +193,8 @@ Frame size: 64 bytes
 - Gyroscope: 12 bytes (3x float)
 - Reserved: 8 bytes
 - CRC32 checksum: 4 bytes
+
+**Flash writes are faster than SD card!** SPIFFS on ESP32-S3 typically achieves 200-300 KB/s write speeds.
 
 ## WebSocket Telemetry
 

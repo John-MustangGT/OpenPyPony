@@ -1,11 +1,14 @@
 // include/logger.h
-// Binary logger for high-speed sensor data logging
+// Flash-based binary logger with ring buffer policy
 // Format is COMPATIBLE with CircuitPython version
 
 #pragma once
 
-#include <Arduino.h>
-#include <SD.h>
+#include <stdio.h>
+#include <vector>
+#include <string>
+#include "esp_vfs.h"
+#include "esp_spiffs.h"
 #include "interfaces/gps_interface.h"
 #include "interfaces/imu_interface.h"
 
@@ -30,6 +33,10 @@ namespace OpenPony {
 // - Checksum (4 bytes, CRC32)
 constexpr size_t FRAME_SIZE = 64;
 
+// Storage policy
+constexpr float HIGH_WATER_MARK = 0.90f;  // 90% full triggers cleanup
+constexpr float LOW_WATER_MARK = 0.60f;   // Delete until 60% full
+
 // Session data frame
 struct DataFrame {
     double timestamp;       // Unix timestamp (seconds since epoch)
@@ -49,15 +56,31 @@ struct DataFrame {
     uint32_t checksum;      // CRC32 checksum
 } __attribute__((packed));
 
-class BinaryLogger {
+// Session metadata
+struct SessionInfo {
+    std::string filename;
+    size_t size_bytes;
+    uint32_t frame_count;
+    time_t created_time;
+
+    SessionInfo() : size_bytes(0), frame_count(0), created_time(0) {}
+};
+
+class FlashLogger {
 public:
-    BinaryLogger();
-    ~BinaryLogger();
+    FlashLogger();
+    ~FlashLogger();
 
-    // Initialize logger (create session file)
-    bool begin(const char* session_name = nullptr);
+    // Initialize flash filesystem and logger
+    bool begin();
 
-    // Close logger and flush data
+    // Start new logging session (creates new file)
+    bool startSession(const char* session_name = nullptr);
+
+    // Stop current session
+    void stopSession();
+
+    // Close logger
     void close();
 
     // Log a frame of data
@@ -72,30 +95,44 @@ public:
     uint32_t getFrameCount() const { return frame_count_; }
     size_t getBytesWritten() const { return bytes_written_; }
     bool isLogging() const { return file_ && logging_; }
+    const char* getCurrentSession() const { return current_session_.c_str(); }
 
-    // Flush buffer to SD card
+    // Flush buffer to flash
     void flush();
 
+    // Flash storage management
+    bool checkStorage();                    // Check if cleanup needed
+    bool cleanupOldSessions();              // Delete old sessions until LOW_WATER_MARK
+    std::vector<SessionInfo> listSessions(); // List all sessions on flash
+    bool deleteSession(const char* filename); // Delete specific session
+    size_t getTotalUsed();                  // Get total flash usage
+    size_t getTotalSize();                  // Get total flash size
+    float getUsagePercent();                // Get usage percentage
+
 private:
-    File file_;
+    FILE* file_;
     bool logging_;
     uint32_t frame_count_;
     size_t bytes_written_;
-    char session_filepath_[64];
+    std::string current_session_;
+    std::string base_path_;
 
-    // Write buffer for performance (write in larger chunks)
-    static constexpr size_t BUFFER_SIZE = 1024;  // 16 frames
+    // Write buffer for performance (16 frames = 1KB)
+    static constexpr size_t BUFFER_SIZE = FRAME_SIZE * 16;
     uint8_t write_buffer_[BUFFER_SIZE];
     size_t buffer_pos_;
 
-    // Generate session filename
-    void generateSessionName(char* buffer, size_t len);
+    // Generate session filename with timestamp
+    std::string generateSessionName();
 
     // Calculate CRC32 checksum
     uint32_t calculateCRC32(const uint8_t* data, size_t length);
 
     // Write frame to file (with buffering)
     bool writeFrame(const DataFrame& frame);
+
+    // Initialize SPIFFS filesystem
+    bool initSPIFFS();
 };
 
 } // namespace OpenPony
