@@ -21,7 +21,6 @@
 #include "driver/i2c.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
-#include "esp_rom/ets_sys.h"
 
 // ESP-IDF WiFi/networking
 #include "esp_wifi.h"
@@ -224,12 +223,12 @@ static void i2c_pin_test()
     // Toggle SCL a few times and read SDA
     for (int i = 0; i < 8; ++i) {
         gpio_set_level(scl, 0);
-        ets_delay_us(500);
+        vTaskDelay(pdMS_TO_TICKS(1));
         int sda_read = gpio_get_level(sda);
         ESP_LOGI(TAG, "Toggle %d: SCL=0, SDA=%d", i, sda_read);
 
         gpio_set_level(scl, 1);
-        ets_delay_us(500);
+        vTaskDelay(pdMS_TO_TICKS(1));
         sda_read = gpio_get_level(sda);
         ESP_LOGI(TAG, "Toggle %d: SCL=1, SDA=%d", i, sda_read);
     }
