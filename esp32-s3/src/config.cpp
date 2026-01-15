@@ -88,6 +88,10 @@ void Config::setDefaults() {
     config_["telemetry.port"] = "80";
     config_["telemetry.rate"] = "10";
     config_["telemetry.satellite_details_interval"] = "60";
+    // Hardware: default STEMMA I2C power pin for Adafruit Feather Reverse TFT
+    // Many Feather variants expose a power enable pin for the STEMMA connector (vsensor/TFT_I2C_POWER)
+    // Default to GPIO2 which is the Feather's VSENSOR/I2C power control on some boards.
+    config_["hardware.stemma_power_pin"] = "2";
 }
 
 } // namespace OpenPony
