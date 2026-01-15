@@ -146,17 +146,59 @@ static esp_err_t i2c_master_init(void)
     esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "I2C param config failed: %s", esp_err_to_name(err));
+        // Diagnostic: read pin levels which can indicate a pin conflict (e.g. UART RX on GPIO3)
+        int sda_level = gpio_get_level((gpio_num_t)I2C_MASTER_SDA_IO);
+        int scl_level = gpio_get_level((gpio_num_t)I2C_MASTER_SCL_IO);
+        ESP_LOGI(TAG, "I2C SDA pin (GPIO%u) level: %d", I2C_MASTER_SDA_IO, sda_level);
+        ESP_LOGI(TAG, "I2C SCL pin (GPIO%u) level: %d", I2C_MASTER_SCL_IO, scl_level);
+        ESP_LOGW(TAG, "Common causes: pins reserved for UART0 (GPIO1/3), JTAG, or conflicting driver.\n"
+                 "If SDA is GPIO3 the USB-serial console may conflict. Consider changing SDA/SCL pins or disabling console.");
         return err;
     }
 
     err = i2c_driver_install(I2C_MASTER_NUM, conf.mode, 0, 0, 0);
     if (err != ESP_OK) {
         ESP_LOGE(TAG, "I2C driver install failed: %s", esp_err_to_name(err));
+        int sda_level = gpio_get_level((gpio_num_t)I2C_MASTER_SDA_IO);
+        int scl_level = gpio_get_level((gpio_num_t)I2C_MASTER_SCL_IO);
+        ESP_LOGI(TAG, "I2C SDA pin (GPIO%u) level: %d", I2C_MASTER_SDA_IO, sda_level);
+        ESP_LOGI(TAG, "I2C SCL pin (GPIO%u) level: %d", I2C_MASTER_SCL_IO, scl_level);
+        ESP_LOGW(TAG, "Driver install failed; check that pins are free and not used by UART/JTAG or another peripheral.");
         return err;
     }
 
     ESP_LOGI(TAG, "I2C bus initialized at %d Hz", I2C_MASTER_FREQ_HZ);
     return ESP_OK;
+}
+
+// Simple I2C bus scanner: probes 7-bit addresses 0x03..0x77
+static void i2c_scan_bus()
+{
+    ESP_LOGI(TAG, "Scanning I2C bus for devices...");
+    int found = 0;
+    for (int addr = 0x03; addr <= 0x77; ++addr) {
+        i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+        i2c_master_start(cmd);
+        // write address with write bit, check ack
+        i2c_master_write_byte(cmd, (uint8_t)(addr << 1) | I2C_MASTER_WRITE, true);
+        i2c_master_stop(cmd);
+        esp_err_t ret = i2c_master_cmd_begin(I2C_MASTER_NUM, cmd, pdMS_TO_TICKS(50));
+        i2c_cmd_link_delete(cmd);
+
+        if (ret == ESP_OK) {
+            ESP_LOGI(TAG, "I2C device found at 0x%02X", addr);
+            ++found;
+        } else if (ret == ESP_ERR_INVALID_ARG) {
+            ESP_LOGW(TAG, "Invalid arg probing 0x%02X", addr);
+        } else if (ret == ESP_ERR_TIMEOUT) {
+            ESP_LOGW(TAG, "Timeout probing 0x%02X", addr);
+        }
+    }
+    if (found == 0) {
+        ESP_LOGW(TAG, "No I2C devices found on bus");
+    } else {
+        ESP_LOGI(TAG, "I2C scan complete - %d device(s) found", found);
+    }
 }
 
 // ============================================================================
@@ -442,6 +484,9 @@ extern "C" void app_main(void)
 
     // Initialize sensors
     ESP_LOGI(TAG, "Initializing sensors...");
+
+    // Run I2C bus scan to help detect connected devices (useful for debugging STEMMA/Feather wiring)
+    i2c_scan_bus();
 
     // Initialize PA1010D GPS
     gps = new PA1010D(I2C_MASTER_NUM, 0x10);
