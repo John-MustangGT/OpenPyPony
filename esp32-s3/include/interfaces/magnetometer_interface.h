@@ -4,7 +4,7 @@
 
 #pragma once
 
-#include <Arduino.h>
+#include <stdint.h>
 #include "imu_interface.h"  // For Vector3
 
 namespace OpenPony {

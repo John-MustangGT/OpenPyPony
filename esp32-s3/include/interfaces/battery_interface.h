@@ -13,6 +13,7 @@ enum class ChargeStatus {
     CHARGING,
     DISCHARGING,
     FULL,
+    LOW,
     NOT_PRESENT
 };
 

@@ -4,6 +4,8 @@
 #include "hardware/feather_battery.h"
 #include "esp_log.h"
 #include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
 static const char* TAG = "FeatherBattery";
 
