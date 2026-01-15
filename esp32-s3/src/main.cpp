@@ -21,6 +21,7 @@
 #include "driver/i2c.h"
 #include "driver/spi_master.h"
 #include "driver/gpio.h"
+#include "esp_rom/ets_sys.h"
 
 // ESP-IDF WiFi/networking
 #include "esp_wifi.h"
