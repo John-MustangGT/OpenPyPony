@@ -56,9 +56,11 @@ using namespace OpenPony;
 
 static const char *TAG = "OpenPony";
 
+#include "sdkconfig.h"
 // I2C Configuration (STEMMA QT on Feather)
-#define I2C_MASTER_SCL_IO           GPIO_NUM_4      // Feather I2C SCL
-#define I2C_MASTER_SDA_IO           GPIO_NUM_3      // Feather I2C SDA
+// Default moved off GPIO3 (USB-UART RX) to avoid console conflicts.
+#define I2C_MASTER_SCL_IO           22     // Use GPIO22 for SCL
+#define I2C_MASTER_SDA_IO           21     // Use GPIO21 for SDA
 #define I2C_MASTER_NUM              I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ          400000          // 400 kHz Fast Mode
 #define I2C_MASTER_TIMEOUT_MS       1000
