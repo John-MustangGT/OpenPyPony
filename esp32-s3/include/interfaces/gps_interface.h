@@ -48,7 +48,8 @@ struct SatelliteInfo {
 enum class FixType {
     NO_FIX,
     FIX_2D,
-    FIX_3D
+    FIX_3D,
+    DGPS
 };
 
 // Abstract GPS interface

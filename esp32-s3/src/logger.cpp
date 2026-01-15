@@ -20,8 +20,8 @@ constexpr const char* SPIFFS_BASE_PATH = "/spiffs";
 constexpr const char* SESSION_PREFIX = "session_";
 
 // LZ4 compression configuration
-constexpr size_t LZ4_COMPRESS_BATCH_SIZE = FRAME_SIZE * 16;  // Compress 16 frames at a time (1KB)
-constexpr size_t LZ4_COMPRESSED_BOUND = LZ4_COMPRESSBATCH_SIZE + (LZ4_COMPRESSBATCH_SIZE / 255) + 16;
+#define LZ4_COMPRESS_BATCH_SIZE (FRAME_SIZE * 16)  // Compress 16 frames at a time (1KB)
+#define LZ4_COMPRESSED_BOUND_SIZE (LZ4_COMPRESS_BATCH_SIZE + (LZ4_COMPRESS_BATCH_SIZE / 255) + 16)
 
 // File format with compression:
 // [Header: 4 bytes "OPL1"] - OpenPonyLogger format version 1
@@ -36,8 +36,8 @@ FlashLogger::FlashLogger()
     , logging_(false)
     , frame_count_(0)
     , bytes_written_(0)
-    , buffer_pos_(0)
     , base_path_(SPIFFS_BASE_PATH)
+    , buffer_pos_(0)
 {
     memset(write_buffer_, 0, sizeof(write_buffer_));
 }
@@ -234,7 +234,7 @@ void FlashLogger::flush() {
     }
 
     // Compress the buffer using LZ4
-    char compressed_buffer[LZ4_COMPRESSED_BOUND];
+    char compressed_buffer[LZ4_COMPRESSED_BOUND_SIZE];
     int compressed_size = LZ4_compress_default(
         (const char*)write_buffer_,
         compressed_buffer,
