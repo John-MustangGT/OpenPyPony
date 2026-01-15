@@ -1,6 +1,6 @@
 # Name,   Type, SubType, Offset,  Size, Flags
-# OpenPonyLogger ESP32-S3 Partition Table for 16MB Flash
-nvs,      data, nvs,     0x9000,  0x4000,
-phy_init, data, phy,     0xd000,  0x1000,
-factory,  app,  factory, 0x10000, 3M,
-spiffs,   data, spiffs,  ,        12M,
+# OpenPonyLogger ESP32-S3 Partition Table for 4MB Flash
+nvs,      data, nvs,     0x9000,  0x6000,
+phy_init, data, phy,     0xf000,  0x1000,
+factory,  app,  factory, 0x10000, 0x180000,
+spiffs,   data, spiffs,  ,        0x250000,
