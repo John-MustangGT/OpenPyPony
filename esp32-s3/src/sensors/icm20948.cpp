@@ -115,12 +115,32 @@ bool ICM20948::reset() {
 bool ICM20948::checkWhoAmI() {
     selectBank(BANK_0);
     uint8_t who_am_i = 0;
-    if (!readRegister(ICM20948_Reg::WHO_AM_I, &who_am_i)) {
-        return false;
+    // Try current address first
+    if (readRegister(ICM20948_Reg::WHO_AM_I, &who_am_i)) {
+        ESP_LOGI(TAG, "WHO_AM_I at 0x%02X: 0x%02X (expected 0x%02X)", address_, who_am_i, ICM20948_WHO_AM_I_VALUE);
+        if (who_am_i == ICM20948_WHO_AM_I_VALUE) return true;
+    } else {
+        ESP_LOGW(TAG, "Failed to read WHO_AM_I at address 0x%02X", address_);
     }
 
-    ESP_LOGI(TAG, "WHO_AM_I: 0x%02X (expected 0x%02X)", who_am_i, ICM20948_WHO_AM_I_VALUE);
-    return who_am_i == ICM20948_WHO_AM_I_VALUE;
+    // Try alternative common address (0x68/0x69)
+    uint8_t alt = (address_ == 0x69) ? 0x68 : 0x69;
+    uint8_t who_alt = 0;
+    uint8_t old_addr = address_;
+    address_ = alt;
+    if (readRegister(ICM20948_Reg::WHO_AM_I, &who_alt)) {
+        ESP_LOGI(TAG, "WHO_AM_I at 0x%02X: 0x%02X (expected 0x%02X)", address_, who_alt, ICM20948_WHO_AM_I_VALUE);
+        if (who_alt == ICM20948_WHO_AM_I_VALUE) {
+            ESP_LOGI(TAG, "Detected ICM20948 at alternate address 0x%02X; updating address.", address_);
+            return true;
+        }
+    } else {
+        ESP_LOGW(TAG, "Failed to read WHO_AM_I at alternate address 0x%02X", address_);
+    }
+
+    // Restore original address before returning
+    address_ = old_addr;
+    return false;
 }
 
 bool ICM20948::initAccelerometer() {
@@ -164,27 +184,21 @@ bool ICM20948::selectBank(uint8_t bank) {
 
 bool ICM20948::writeRegister(uint8_t reg, uint8_t value) {
     uint8_t data[2] = {reg, value};
-    esp_err_t ret = i2c_master_write_to_device(
-        i2c_port_,
-        address_,
-        data,
-        2,
-        pdMS_TO_TICKS(100)
-    );
-    return ret == ESP_OK;
+    esp_err_t ret = i2c_master_write_to_device(i2c_port_, address_, data, 2, pdMS_TO_TICKS(100));
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "i2c write failed to 0x%02X reg 0x%02X: %s", address_, reg, esp_err_to_name(ret));
+        return false;
+    }
+    return true;
 }
 
 bool ICM20948::readRegister(uint8_t reg, uint8_t* value) {
-    esp_err_t ret = i2c_master_write_read_device(
-        i2c_port_,
-        address_,
-        &reg,
-        1,
-        value,
-        1,
-        pdMS_TO_TICKS(100)
-    );
-    return ret == ESP_OK;
+    esp_err_t ret = i2c_master_write_read_device(i2c_port_, address_, &reg, 1, value, 1, pdMS_TO_TICKS(100));
+    if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "i2c read failed from 0x%02X reg 0x%02X: %s", address_, reg, esp_err_to_name(ret));
+        return false;
+    }
+    return true;
 }
 
 bool ICM20948::readRegisters(uint8_t reg, uint8_t* buffer, size_t len) {
