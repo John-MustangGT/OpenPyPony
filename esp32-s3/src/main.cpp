@@ -508,6 +508,17 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Loading configuration...");
     config.load();
 
+    // Report which pins will be used for I2C/STEMMA
+    {
+        int cfg_stemma_pin = config.getInt("hardware.stemma_power_pin", -1);
+        ESP_LOGI(TAG, "I2C pins: SDA=GPIO%u, SCL=GPIO%u", I2C_MASTER_SDA_IO, I2C_MASTER_SCL_IO);
+        if (cfg_stemma_pin >= 0) {
+            ESP_LOGI(TAG, "STEMMA/Vsensor power pin configured: GPIO%d", cfg_stemma_pin);
+        } else {
+            ESP_LOGI(TAG, "STEMMA/Vsensor power pin: (not configured)");
+        }
+    }
+
     // Enable STEMMA/I2C power if configured (some Feather boards expose an I2C power enable pin)
     int stemma_power_pin = config.getInt("hardware.stemma_power_pin", -1);
     if (stemma_power_pin >= 0) {
