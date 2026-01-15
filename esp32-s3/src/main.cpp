@@ -508,6 +508,17 @@ extern "C" void app_main(void)
     ESP_LOGI(TAG, "Loading configuration...");
     config.load();
 
+    // Enable STEMMA/I2C power if configured (some Feather boards expose an I2C power enable pin)
+    int stemma_power_pin = config.getInt("hardware.stemma_power_pin", -1);
+    if (stemma_power_pin >= 0) {
+        ESP_LOGI(TAG, "Enabling STEMMA I2C power on GPIO%d", stemma_power_pin);
+        gpio_reset_pin((gpio_num_t)stemma_power_pin);
+        gpio_set_direction((gpio_num_t)stemma_power_pin, GPIO_MODE_OUTPUT);
+        gpio_set_level((gpio_num_t)stemma_power_pin, 1);
+        // small delay to allow power rail to stabilize
+        vTaskDelay(pdMS_TO_TICKS(50));
+    }
+
     // Initialize flash logger
     ESP_LOGI(TAG, "Initializing flash storage logger...");
     logger = new FlashLogger();

@@ -28,6 +28,8 @@ Purpose: give AI coding agents immediate, actionable context to be productive in
   - Configuration keys are dot-separated strings used via `Config::get*` (e.g., `telemetry.rate`, `telemetry.satellite_details_interval`). Prefer to read via `config.getInt("telemetry.satellite_details_interval", 60)`.
   - No SD card by default — logs are stored in flash using `FlashLogger` and obey a ring-buffer cleanup policy (90% → 60%). Partitioning is defined in `partitions.csv`.
 
+    - STEMMA/I2C power: Some boards (Adafruit Reverse TFT Feather) expose an I2C power enable pin. If devices on the STEMMA connector require this, set `hardware.stemma_power_pin` in your runtime config (or add it to `Config::setDefaults()` for development) to a GPIO number and the firmware will drive it high before initializing I2C.
+
 - **Integration points & TODOs** (existing stubs / places to implement):
   - `src/webserver.cpp`: WebSocket server is a stub—implement `begin`, `sendTelemetry`, and JSON serialization.
   - Display driver is TODO (ST7789) — main has a TODO comment where `display` should be instantiated.
