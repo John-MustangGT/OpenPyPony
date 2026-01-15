@@ -531,6 +531,11 @@ extern "C" void app_main(void)
         gpio_set_level((gpio_num_t)stemma_power_pin, 1);
         // small delay to allow power rail to stabilize
         vTaskDelay(pdMS_TO_TICKS(50));
+        int pval = gpio_get_level((gpio_num_t)stemma_power_pin);
+        ESP_LOGI(TAG, "STEMMA power pin GPIO%d level after enable: %d", stemma_power_pin, pval);
+        int sda_raw = gpio_get_level((gpio_num_t)I2C_MASTER_SDA_IO);
+        int scl_raw = gpio_get_level((gpio_num_t)I2C_MASTER_SCL_IO);
+        ESP_LOGI(TAG, "I2C raw pin levels after enabling power: SDA(GPIO%u)=%d, SCL(GPIO%u)=%d", I2C_MASTER_SDA_IO, sda_raw, I2C_MASTER_SCL_IO, scl_raw);
     }
 
     // Initialize flash logger
