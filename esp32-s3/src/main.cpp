@@ -43,6 +43,7 @@
 #include "sensors/pa1010d.h"
 #include "sensors/icm20948.h"
 #include "hardware/feather_battery.h"
+#include <atomic>
 
 // TODO: Display implementation
 // #include "hardware/st7789_display.h"
@@ -124,9 +125,9 @@ struct SensorData {
 } shared_sensor_data;
 
 // Statistics
-volatile uint32_t sensor_loop_count = 0;
-volatile uint32_t frames_logged = 0;
-volatile uint32_t telemetry_sent = 0;
+static std::atomic<uint32_t> sensor_loop_count{0};
+static std::atomic<uint32_t> frames_logged{0};
+static std::atomic<uint32_t> telemetry_sent{0};
 
 // ============================================================================
 // I2C Bus Initialization
@@ -321,7 +322,7 @@ static void sensor_task(void* parameter)
             xSemaphoreGive(sensor_data_mutex);
         }
 
-        sensor_loop_count++;
+        sensor_loop_count.fetch_add(1, std::memory_order_relaxed);
 
         // Sleep until next period
         vTaskDelayUntil(&last_wake_time, sensor_period);
@@ -360,7 +361,7 @@ static void logging_task(void* parameter)
                                 local_data.gps_satellites,
                                 local_data.accel,
                                 local_data.gyro)) {
-                frames_logged++;
+                frames_logged.fetch_add(1, std::memory_order_relaxed);
                 flush_counter++;
             }
         }
@@ -444,7 +445,7 @@ static void wifi_task(void* parameter)
                 }
 
                 telemetry_server->sendTelemetry(telemetry);
-                telemetry_sent++;
+                telemetry_sent.fetch_add(1, std::memory_order_relaxed);
             }
         }
 
@@ -457,9 +458,14 @@ static void stats_task(void* parameter)
 {
     while (true) {
         ESP_LOGI(TAG, "=== Statistics ===");
-        ESP_LOGI(TAG, "Sensor loops: %" PRIu32, sensor_loop_count);
-        ESP_LOGI(TAG, "Frames logged: %" PRIu32, frames_logged);
-        ESP_LOGI(TAG, "Telemetry sent: %" PRIu32, telemetry_sent);
+        {
+            uint32_t sl = sensor_loop_count.load(std::memory_order_relaxed);
+            uint32_t fl = frames_logged.load(std::memory_order_relaxed);
+            uint32_t ts = telemetry_sent.load(std::memory_order_relaxed);
+            ESP_LOGI(TAG, "Sensor loops: %" PRIu32, sl);
+            ESP_LOGI(TAG, "Frames logged: %" PRIu32, fl);
+            ESP_LOGI(TAG, "Telemetry sent: %" PRIu32, ts);
+        }
         if (telemetry_server) {
             ESP_LOGI(TAG, "WiFi clients: %u", telemetry_server->getClientCount());
         }
