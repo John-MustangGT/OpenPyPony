@@ -201,6 +201,47 @@ static void i2c_scan_bus()
     }
 }
 
+// GPIO-level quick test: toggle SCL as a GPIO and read SDA to detect stuck lines
+static void i2c_pin_test()
+{
+    ESP_LOGI(TAG, "I2C pin test: reading raw SDA/SCL levels and toggling SCL");
+
+    gpio_num_t sda = (gpio_num_t)I2C_MASTER_SDA_IO;
+    gpio_num_t scl = (gpio_num_t)I2C_MASTER_SCL_IO;
+
+    // Read current levels
+    int sda_level = gpio_get_level(sda);
+    int scl_level = gpio_get_level(scl);
+    ESP_LOGI(TAG, "Raw levels before test - SDA(GPIO%u)=%d, SCL(GPIO%u)=%d", sda, sda_level, scl, scl_level);
+
+    // Try to temporarily take control of SCL as GPIO output
+    gpio_reset_pin(scl);
+    gpio_set_direction(scl, GPIO_MODE_OUTPUT);
+    gpio_set_level(scl, 1);
+    vTaskDelay(pdMS_TO_TICKS(10));
+
+    // Toggle SCL a few times and read SDA
+    for (int i = 0; i < 8; ++i) {
+        gpio_set_level(scl, 0);
+        ets_delay_us(500);
+        int sda_read = gpio_get_level(sda);
+        ESP_LOGI(TAG, "Toggle %d: SCL=0, SDA=%d", i, sda_read);
+
+        gpio_set_level(scl, 1);
+        ets_delay_us(500);
+        sda_read = gpio_get_level(sda);
+        ESP_LOGI(TAG, "Toggle %d: SCL=1, SDA=%d", i, sda_read);
+    }
+
+    // Restore SCL to input with pullups so I2C driver can use it
+    gpio_set_direction(scl, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(scl, GPIO_PULLUP_ONLY);
+    gpio_set_direction(sda, GPIO_MODE_INPUT);
+    gpio_set_pull_mode(sda, GPIO_PULLUP_ONLY);
+
+    ESP_LOGI(TAG, "I2C pin test complete");
+}
+
 // ============================================================================
 // Storage Management
 // ============================================================================
@@ -487,6 +528,9 @@ extern "C" void app_main(void)
 
     // Run I2C bus scan to help detect connected devices (useful for debugging STEMMA/Feather wiring)
     i2c_scan_bus();
+
+    // Run a GPIO-level pin test to detect stuck SDA/SCL lines
+    i2c_pin_test();
 
     // Initialize PA1010D GPS
     gps = new PA1010D(I2C_MASTER_NUM, 0x10);
