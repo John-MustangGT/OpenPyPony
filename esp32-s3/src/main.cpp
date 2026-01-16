@@ -58,6 +58,7 @@ static const char *TAG = "OpenPony";
 // I2C Configuration (STEMMA QT on Feather)
 #define I2C_MASTER_SCL_IO           GPIO_NUM_4      // Feather I2C SCL
 #define I2C_MASTER_SDA_IO           GPIO_NUM_3      // Feather I2C SDA
+#define I2C_PWR_IO                  GPIO_NUM_7      // Power control for sensors
 #define I2C_MASTER_NUM              I2C_NUM_0
 #define I2C_MASTER_FREQ_HZ          400000          // 400 kHz Fast Mode
 #define I2C_MASTER_TIMEOUT_MS       1000
@@ -142,6 +143,9 @@ static esp_err_t i2c_master_init(void)
     conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
     conf.master.clk_speed = I2C_MASTER_FREQ_HZ;
     conf.clk_flags = 0;
+    
+    gpio_set_direction(I2C_PWR_IO, GPIO_MODE_OUTPUT);
+    gpio_set_level(I2C_PWR_IO, 1);
 
     esp_err_t err = i2c_param_config(I2C_MASTER_NUM, &conf);
     if (err != ESP_OK) {
